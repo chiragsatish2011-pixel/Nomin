@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Nomin Studio - Chat Interface</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-secondary": "#480081",
+                      "tertiary-container": "#c3ccd8",
+                      "surface-dim": "#0b141c",
+                      "primary-container": "#2ee6a6",
+                      "surface-container-lowest": "#060f17",
+                      "primary": "#2EE6A6", // Vibrant Emerald
+                      "surface-container-high": "#222b34",
+                      "surface-container": "#182029",
+                      "tertiary": "#dfe8f4",
+                      "outline": "#85948a",
+                      "surface-container-highest": "#2d363f",
+                      "tertiary-fixed": "#dae3ef",
+                      "code-base": "rgba(3, 8, 12, 0.6)", // Transparent for glassmorphism
+                      "primary-fixed": "#52febc",
+                      "outline-variant": "#3b4a42",
+                      "on-tertiary-fixed": "#131c25",
+                      "error-container": "#93000a",
+                      "background-deep": "#071018", // Deep Navy
+                      "on-background": "#F7F9F8", // Crisp White
+                      "inverse-on-surface": "#28313a",
+                      "on-primary-fixed": "#002114",
+                      "on-primary": "#003825",
+                      "surface": "#0b141c",
+                      "secondary-fixed": "#efdbff",
+                      "border-subtle": "rgba(255, 255, 255, 0.1)",
+                      "secondary-fixed-dim": "#dcb8ff",
+                      "on-secondary-fixed": "#2c0051",
+                      "surface-glass-hover": "rgba(255, 255, 255, 0.08)",
+                      "secondary": "#dcb8ff",
+                      "on-surface": "#F7F9F8", // Crisp White
+                      "on-error": "#690005",
+                      "surface-glass": "rgba(255, 255, 255, 0.04)",
+                      "tertiary-fixed-dim": "#bec7d3",
+                      "surface-container-low": "rgba(20, 28, 37, 0.4)", // Adjusted for blur
+                      "surface-bright": "#313a43",
+                      "on-tertiary-container": "#4d5660",
+                      "error": "#ffb4ab",
+                      "on-tertiary-fixed-variant": "#3f4851",
+                      "secondary-container": "#7701d0",
+                      "on-tertiary": "#28313a",
+                      "background": "#071018", // Deep Navy
+                      "inverse-surface": "#dae3ef",
+                      "on-secondary-fixed-variant": "#6700b5",
+                      "primary-fixed-dim": "#23e1a1",
+                      "on-surface-variant": "#bacabf",
+                      "on-secondary-container": "#dcb7ff",
+                      "surface-variant": "rgba(45, 54, 63, 0.5)", // Transparent for glassmorphism
+                      "on-primary-container": "#006244",
+                      "on-error-container": "#ffdad6",
+                      "on-primary-fixed-variant": "#005137",
+                      "surface-tint": "#23e1a1",
+                      "inverse-primary": "#006c4b",
+                      "accent-gradient": "linear-gradient(135deg, #071018, #2EE6A6)"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "margin-desktop": "64px",
+                      "lg": "48px",
+                      "sm": "12px",
+                      "margin-mobile": "16px",
+                      "base": "8px",
+                      "md": "24px",
+                      "xl": "80px",
+                      "xs": "4px",
+                      "gutter": "24px"
+              },
+              "fontFamily": {
+                      "body-lg": ["Plus Jakarta Sans"],
+                      "headline-xl": ["Plus Jakarta Sans"],
+                      "body-md": ["Plus Jakarta Sans"],
+                      "code-sm": ["JetBrains Mono"],
+                      "label-xs": ["Plus Jakarta Sans"],
+                      "headline-sm": ["Plus Jakarta Sans"],
+                      "label-sm": ["Plus Jakarta Sans"],
+                      "headline-md": ["Plus Jakarta Sans"],
+                      "label-md": ["Plus Jakarta Sans"]
+              },
+              "animation": {
+                'stagger-1': 'fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both',
+                'stagger-2': 'fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both',
+                'stagger-3': 'fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both',
+                'stagger-4': 'fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both',
+                'stagger-5': 'fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.5s both',
+                'float': 'floating 4s ease-in-out infinite',
+                'pulse-glow': 'pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                'typing': 'typing 2s steps(40, end)',
+                'slide-float': 'slideFloat 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) both',
+                'materialize': 'materialize 1s cubic-bezier(0.16, 1, 0.3, 1) both',
+                'biolum-pulse': 'biolumPulse 2s ease-in-out infinite'
+              },
+              "keyframes": {
+                fadeInUp: {
+                    '0%': { opacity: '0', transform: 'translateY(20px)' },
+                    '100%': { opacity: '1', transform: 'translateY(0)' },
+                },
+                floating: {
+                    '0%, 100%': { transform: 'translateY(0)' },
+                    '50%': { transform: 'translateY(-10px)' },
+                },
+                'pulse-glow': {
+                    '0%, 100%': { opacity: 1, textShadow: '0 0 8px rgba(46, 230, 166, 0.5)' },
+                    '50%': { opacity: .5, textShadow: 'none' }
+                },
+                typing: {
+                    from: { width: '0' },
+                    to: { width: '100%' }
+                },
+                slideFloat: {
+                    '0%': { opacity: '0', transform: 'translateY(30px) scale(0.95)' },
+                    '100%': { opacity: '1', transform: 'translateY(0) scale(1)' }
+                },
+                materialize: {
+                    '0%': { opacity: '0', filter: 'blur(10px)', transform: 'translateY(10px)' },
+                    '100%': { opacity: '1', filter: 'blur(0px)', transform: 'translateY(0)' }
+                },
+                biolumPulse: {
+                    '0%, 100%': { opacity: 0.6, filter: 'brightness(1) drop-shadow(0 0 4px rgba(46,230,166,0.3))' },
+                    '50%': { opacity: 1, filter: 'brightness(1.2) drop-shadow(0 0 12px rgba(46,230,166,0.8))' }
+                }
+              }
+      },
+          },
+        }
+    </script>
+<style>
+        body {
+            background-color: theme('colors.background-deep');
+            color: theme('colors.on-surface');
+            background-attachment: fixed;
+            cursor: none; /* Hide default cursor for custom one */
+        }
+        
+        /* Custom scrollbar for webkit */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: theme('colors.surface-variant');
+            border-radius: theme('borderRadius.full');
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: theme('colors.outline');
+        }
+
+        .glass-panel {
+            background: theme('colors.surface-glass');
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid theme('colors.border-subtle');
+        }
+        
+        .deep-glass-panel {
+            backdrop-filter: blur(3xl);
+            -webkit-backdrop-filter: blur(3xl);
+            background: rgba(7, 16, 24, 0.4); /* #071018 with opacity */
+            border: 1px solid rgba(46, 230, 166, 0.15); /* Subtle emerald border */
+        }
+
+        .pulse-text {
+            animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        
+        .magnetic-btn {
+            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease;
+        }
+        .magnetic-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        .typewriter {
+            overflow: hidden;
+            white-space: nowrap;
+            margin: 0 auto;
+            letter-spacing: .15em;
+            animation: typing 2s steps(40, end);
+        }
+
+        /* Luminous Rim Effect */
+        .luminous-rim {
+            position: relative;
+        }
+        .luminous-rim::before {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            border-radius: inherit;
+            padding: 1px;
+            background: linear-gradient(135deg, rgba(46,230,166,0.5), transparent 40%, transparent 60%, rgba(46,230,166,0.1));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        /* Custom Cursor styling */
+        #custom-cursor {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 12px;
+            height: 12px;
+            background-color: theme('colors.primary');
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 9999;
+            box-shadow: 0 0 15px theme('colors.primary'), 0 0 30px theme('colors.primary');
+            transform: translate(-50%, -50%);
+            transition: width 0.2s, height 0.2s;
+            mix-blend-mode: screen;
+        }
+        #custom-cursor.active {
+            width: 24px;
+            height: 24px;
+            background-color: transparent;
+            border: 2px solid theme('colors.primary');
+            box-shadow: 0 0 10px theme('colors.primary');
+        }
+        #cursor-trail {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 1px solid rgba(46, 230, 166, 0.4);
+            pointer-events: none;
+            z-index: 9998;
+            transform: translate(-50%, -50%);
+            transition: transform 0.1s ease-out;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+        }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex font-body-md text-body-md bg-background-deep relative">
+<!-- Custom Cursor -->
+<div id="custom-cursor"></div>
+<div id="cursor-trail"></div>
+<!-- STITCH_SHADER_START:ANIMATION_52 class="fixed inset-0 w-full h-full z-0 opacity-100" -->
+<div class="fixed inset-0 w-full h-full z-0 opacity-100" style="display:block;">
+<canvas id="shader-canvas-ANIMATION_52" style="display:block;width:100%;height:100%"></canvas>
+<script>
+(function() {
+  const canvas = document.getElementById('shader-canvas-ANIMATION_52');
+
+  // Sync the WebGL drawing-buffer size with the CSS-driven layout size.
+  // This fires on initial layout and whenever the element is resized.
+  function syncSize() {
+    const w = canvas.clientWidth  || 1280;
+    const h = canvas.clientHeight || 720;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width  = w;
+      canvas.height = h;
+    }
+  }
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(syncSize).observe(canvas);
+  }
+  syncSize();
+
+  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  if (!gl) return;
+  const vs = `attribute vec2 a_position;
+varying vec2 v_texCoord;
+void main() {
+  v_texCoord = a_position * 0.5 + 0.5;
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}`;
+  const fs = `precision highp float;
+uniform float u_time;
+uniform vec2 u_resolution;
+uniform vec2 u_mouse;
+varying vec2 v_texCoord;
+
+vec3 permute(vec3 x) { return mod(((x*34.0)+1.0)*x, 289.0); }
+float snoise(vec2 v){
+  const vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
+  vec2 i  = floor(v + dot(v, C.yy) );
+  vec2 x0 = v -   i + dot(i, C.xx);
+  vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  vec4 x12 = x0.xyxy + C.xxzz;
+  x12.xy -= i1;
+  i = mod(i, 289.0);
+  vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 )) + i.x + vec3(0.0, i1.x, 1.0 ));
+  vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+  m = m*m; m = m*m;
+  vec3 x = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h = abs(x) - 0.5;
+  vec3 a0 = x - floor(x + 0.5);
+  float m1 = 1.79284291400159 - 0.85373472095314 * ( a0.x*a0.x + h.x*h.x );
+  float m2 = 1.79284291400159 - 0.85373472095314 * ( a0.y*a0.y + h.y*h.y );
+  float m3 = 1.79284291400159 - 0.85373472095314 * ( a0.z*a0.z + h.z*h.z );
+  vec3 g;
+  g.x  = a0.x  * x0.x  + h.x  * x0.y;
+  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m * vec3(m1,m2,m3), g);
+}
+
+void main() {
+    vec2 uv = v_texCoord;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= u_resolution.x / u_resolution.y;
+
+    float t = u_time * 0.03;
+    vec2 mouse = u_mouse / u_resolution;
+    
+    // Sophisticated Oceanic Caustics with Prismatic Shifts
+    float n1 = snoise(uv * 1.0 + vec2(t * 0.4, t * 0.15));
+    float n2 = snoise(uv * 1.8 - vec2(t * 0.2, t * 0.35));
+    float n3 = snoise(uv * 0.6 + vec2(mouse.x * 0.08, t * 0.05));
+    
+    float intensity = smoothstep(0.1, 0.9, n1 * n2 + n3 * 0.4 + 0.3);
+    
+    // Brand Palette: Deep Navy (#071018), Emerald (#2EE6A6), Subtle Purple/Prismatic
+    vec3 deepNavy = vec3(0.027, 0.063, 0.094); // #071018
+    vec3 emerald = vec3(0.18, 0.9, 0.65);    // #2EE6A6
+    vec3 purple = vec3(0.4, 0.15, 0.7);      // Prismatic undertone
+    
+    // Blend layers for cinematic depth
+    vec3 color = mix(deepNavy, deepNavy * 1.2 + emerald * 0.1, intensity);
+    color = mix(color, color + purple * 0.05, n2 * 0.5 + 0.5);
+    
+    // Soft bioluminescent glow for mouse
+    float dist = length(uv - mouse);
+    float glow = 0.012 / (dist + 0.4);
+    color += emerald * glow * intensity;
+    
+    // Deep vignette for human-centric focus
+    float vignette = 1.0 - length(p * 0.45);
+    color *= smoothstep(0.0, 1.0, vignette);
+
+    gl_FragColor = vec4(color, 1.0);
+}`;
+  function cs(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, cs(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, cs(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const pos = gl.getAttribLocation(prog, 'a_position');
+  gl.enableVertexAttribArray(pos);
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+  const uTime = gl.getUniformLocation(prog, 'u_time');
+  const uRes = gl.getUniformLocation(prog, 'u_resolution');
+  const uMouse = gl.getUniformLocation(prog, 'u_mouse');
+
+  // u_mouse is in pixel coordinates matching u_resolution (ShaderToy convention).
+  // Shaders that need normalized coords should use: u_mouse / u_resolution.
+  let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+  window.addEventListener('mousemove', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width && rect.height) {
+      const nx = (event.clientX - rect.left) / rect.width;
+      const ny = 1.0 - (event.clientY - rect.top) / rect.height;
+      mouse.x = nx * canvas.width;
+      mouse.y = ny * canvas.height;
+    }
+  });
+
+  function render(t) {
+    if (typeof ResizeObserver === 'undefined') syncSize();
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    if (uTime) gl.uniform1f(uTime, t * 0.001);
+    if (uRes) gl.uniform2f(uRes, canvas.width, canvas.height);
+    if (uMouse) gl.uniform2f(uMouse, mouse.x, mouse.y);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    requestAnimationFrame(render);
+  }
+  render(0);
+})();
+</script>
+</div>
+<!-- STITCH_SHADER_END:ANIMATION_52 -->
+<!-- SideNavBar -->
+<nav class="hidden md:flex flex-col h-full py-md px-sm deep-glass-panel border-r border-primary/20 docked fixed left-0 w-64 z-40 animate-stagger-1">
+<!-- Header -->
+<div class="mb-lg flex items-center gap-sm px-xs">
+<img alt="Nomin Corporate Logo" class="w-10 h-10 rounded-lg object-contain bg-white p-1" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB0HTzzpRtUsv-CZzDshMKAp_8tWoK8sQCIiAzAizvBZYcjo46ahUg5GYLFagDAhFQSTTMkIMclPptDY_sLg_stsZPEbO8AIPpWJJAkq4VQzvRl0t3keKD6N0cd3ATGKuSh-N3aMBwLwBAD_2LUkoj_b6QoU4GItt-8S1wa0PMs87N5ur_Z93rSv39xRsPu1t-iCBsI1usiiqEYc6-GVuDj3DmT0i6VvnM74UbKBCeBkBB2cWFy0ArGUXwUbnecU_-PYw"/>
+<div>
+<h1 class="font-headline-md text-headline-md font-bold text-on-surface tracking-tight">Nomin Studio</h1>
+<p class="font-label-xs text-label-xs text-on-surface-variant">Technical Workspace</p>
+</div>
+</div>
+<!-- CTA -->
+<button class="mb-lg w-full flex items-center justify-center gap-sm py-sm rounded-full bg-surface-glass-hover text-primary border border-primary/30 hover:bg-surface-glass transition-all magnetic-btn shadow-[0_0_15px_rgba(46,230,166,0.2)] hover:shadow-[0_0_25px_rgba(46,230,166,0.4)] cursor-none">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">add</span>
+<span class="font-label-md text-label-md font-bold">New Thread</span>
+</button>
+<!-- Main Navigation Tabs -->
+<div class="flex-1 space-y-xs overflow-y-auto">
+<a class="flex items-center gap-sm px-sm py-xs rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-glass-hover transition-all duration-200 magnetic-btn cursor-none" href="#">
+<span class="material-symbols-outlined text-[20px]">add</span>
+<span class="font-label-md text-label-md">New Thread</span>
+</a>
+<a class="flex items-center gap-sm px-sm py-xs rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-glass-hover transition-all duration-200 magnetic-btn cursor-none" href="#">
+<span class="material-symbols-outlined text-[20px]">folder_open</span>
+<span class="font-label-md text-label-md">Library</span>
+</a>
+<a class="flex items-center gap-sm px-sm py-xs rounded-lg bg-surface-glass text-on-surface border-l-4 border-primary font-bold transition-all duration-100 shadow-lg magnetic-btn cursor-none" href="#">
+<span class="material-symbols-outlined text-[20px] text-primary">group</span>
+<span class="font-label-md text-label-md">Shared</span>
+</a>
+<a class="flex items-center gap-sm px-sm py-xs rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-glass-hover transition-all duration-200 magnetic-btn cursor-none" href="#">
+<span class="material-symbols-outlined text-[20px]">archive</span>
+<span class="font-label-md text-label-md">Archive</span>
+</a>
+<a class="flex items-center gap-sm px-sm py-xs rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-glass-hover transition-all duration-200 magnetic-btn cursor-none" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</div>
+<!-- Footer Navigation Tabs -->
+<div class="mt-auto pt-md border-t border-primary/20">
+<a class="flex items-center gap-sm px-sm py-xs rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-glass-hover transition-all duration-200 magnetic-btn cursor-none" href="#">
+<span class="material-symbols-outlined text-[20px]">account_circle</span>
+<span class="font-label-md text-label-md">Profile</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col h-full ml-0 md:ml-64 relative z-10">
+<!-- TopAppBar (Mobile Only for this specific task, as Sidebar handles desktop nav based on rules, but we need a header for chat) -->
+<header class="md:hidden flex items-center justify-between px-md py-sm border-b border-border-subtle deep-glass-panel sticky top-0 z-30 animate-stagger-1">
+<div class="flex items-center gap-sm">
+<img alt="Nomin Corporate Logo" class="w-8 h-8 rounded-full border border-border-subtle object-cover bg-white p-1" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA4upguDEJ2SfFAPfR0nPyd0kgdOoIlt8t9COXBtqoXl2yW0_NNAofoVY3l7fXi-vZKZauBa2E6kPGp1K2SpG6--kwh_zfrRHmW-Fqd0DzQAVdFTV1InD5AV4KhvAJ3PeTezelIwJ4-Oj6crtlbOou0USobnM7VOxRDFqAF-L0zx4B2Cvdtjx2WGe4_nhOIUYrw_hVhi42HoycVZYJIbaVtoYQV4VkGP4za_KRkO5jXah6cA6xELuvbTveO_pzdq8LG-w"/>
+<h1 class="font-headline-sm text-headline-sm font-bold text-on-surface">Nomin Studio</h1>
+</div>
+<button class="text-on-surface-variant magnetic-btn cursor-none">
+<span class="material-symbols-outlined">menu</span>
+</button>
+</header>
+<!-- Chat Container -->
+<div class="flex-1 overflow-y-auto px-margin-mobile md:px-margin-desktop py-lg pb-48 flex flex-col gap-xl items-center scroll-smooth">
+<div class="w-full max-w-3xl flex flex-col gap-xl">
+<!-- Initial Context / Header -->
+<div class="text-center pt-md pb-lg animate-stagger-2">
+<div class="inline-flex items-center justify-center w-16 h-16 rounded-full glass-panel mb-md relative overflow-hidden animate-float shadow-[0_0_30px_rgba(46,230,166,0.2)]">
+<img class="w-full h-full object-cover rounded-full mix-blend-screen opacity-90 border border-primary/50" data-alt="A glowing, highly detailed sea-green jellyfish suspended in deep dark water, bioluminescent, macro photography style, futuristic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDpWNlZOFZhMpRdzRoU_AWt_6AGVqiul0QSpFJXAmR43W62mw8IFfu4rhRwc9tGWpIx-ZIHfc-MoisvK0QmNJbyG9oMeL437sQ6AJCnbK47yzoFuQO-BwNPBdVpVmok1sVFx0bjNUHT9WMZMP_R4rb3Do2AJcCjdnXYExnKA3u5jTD5aMn3Rm88kkxzEPvef_Hqxi1s_-KhHLUag06ukjgtE3ORAsEmFNKXDHkwlbWP_OCZB2zuMLVuXCUW0PrbHzB8Dg"/>
+</div>
+<h2 class="font-headline-xl text-headline-xl text-on-surface mb-xs drop-shadow-[0_0_8px_rgba(46,230,166,0.3)]">Trion Agent</h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant">Ready to architect your solution.</p>
+</div>
+<!-- User Message -->
+<div class="flex gap-md justify-end animate-slide-float">
+<div class="max-w-[80%] p-md rounded-2xl rounded-tr-sm deep-glass-panel shadow-sm relative overflow-hidden luminous-rim">
+<p class="font-body-md text-body-md text-on-surface relative z-10">Can we implement a responsive navigation shell that switches between a docked sidebar on desktop and a bottom bar on mobile? Needs to follow the brand design tokens.</p>
+</div>
+<div class="w-8 h-8 rounded-full bg-surface-variant border border-border-subtle flex-shrink-0 flex items-center justify-center overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Minimalist circular user avatar profile picture, abstract geometric shapes in deep purple and dark grey." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD_EyMzSBUf9bZko4n5E5iUA7z1kPK4IkbBX2ekSaNsPwJR6F7zQRDSo1ZP0iniLb7UbGlMnHJPWaTwkRJfBkgirsiC1J_rPmYnjupAnr3JaToKRARffP3DlMAc-YnpcvEJoye_7cs8JZ0mo6S_9XprnasKs2vwUAM8wpWEKwY8CYsg1BwGtUSyjyH6yiWjFatL_gOzj2BUkFvyBfvVre_EXgSHunVvhr43AVBKmcy9UbvYs2mjIo_Z"/>
+</div>
+</div>
+<!-- AI Message with Status -->
+<div class="flex gap-md justify-start animate-materialize">
+<div class="w-8 h-8 rounded-full glass-panel flex-shrink-0 flex items-center justify-center border-primary/50 relative overflow-hidden group animate-float shadow-[0_0_15px_rgba(46,230,166,0.2)]">
+<!-- Agent Avatar miniature -->
+<img class="w-full h-full object-cover rounded-full mix-blend-screen opacity-90" data-alt="A glowing sea-green jellyfish, bioluminescent, macro style, futuristic dark mode avatar." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDpWNlZOFZhMpRdzRoU_AWt_6AGVqiul0QSpFJXAmR43W62mw8IFfu4rhRwc9tGWpIx-ZIHfc-MoisvK0QmNJbyG9oMeL437sQ6AJCnbK47yzoFuQO-BwNPBdVpVmok1sVFx0bjNUHT9WMZMP_R4rb3Do2AJcCjdnXYExnKA3u5jTD5aMn3Rm88kkxzEPvef_Hqxi1s_-KhHLUag06ukjgtE3ORAsEmFNKXDHkwlbWP_OCZB2zuMLVuXCUW0PrbHzB8Dg"/>
+</div>
+<div class="max-w-[85%] flex flex-col gap-sm">
+<!-- Status Indicator -->
+<div class="flex items-center gap-xs text-primary font-code-sm text-code-sm italic animate-biolum-pulse">
+<span class="material-symbols-outlined text-[14px]">psychology</span>
+                            Planning architecture...
+                        </div>
+<!-- Main Content Glass Panel -->
+<div class="p-md rounded-2xl rounded-tl-sm glass-panel shadow-lg luminous-rim">
+<div class="inline-block">
+<p class="mb-md">Certainly. We can structure the layout using Tailwind's responsive prefixes to hide/show the respective navigation components based on the viewport width.</p>
+</div>
+<p class="mb-md">Here is a structural draft using the requested tokens:</p>
+<!-- Code Block -->
+<div class="rounded-lg overflow-hidden border border-border-subtle bg-[#04080c]/80 backdrop-blur-xl font-code-sm text-code-sm my-md shadow-inner">
+<div class="flex items-center justify-between px-sm py-xs bg-surface-variant/50 border-b border-border-subtle">
+<span class="text-on-surface-variant">HTML / Structure</span>
+<button class="text-on-surface-variant hover:text-primary transition-colors flex items-center gap-xs magnetic-btn cursor-none">
+<span class="material-symbols-outlined text-[16px]">content_copy</span>
+<span class="font-label-xs text-label-xs">Copy</span>
+</button>
+</div>
+<div class="p-md overflow-x-auto">
+<pre class="text-tertiary-fixed leading-relaxed typewriter" style="animation-duration: 3s; border-right: 2px solid theme('colors.primary'); padding-right: 5px;"><code><span class="text-outline-variant">&lt;!-- Global Layout Container --&gt;</span>
+&lt;<span class="text-secondary">div</span> <span class="text-primary-container">class</span>=<span class="text-primary">"flex h-screen w-screen bg-background-deep"</span>&gt;
+
+    <span class="text-outline-variant">&lt;!-- Desktop Sidebar (Hidden on Mobile) --&gt;</span>
+    &lt;<span class="text-secondary">nav</span> <span class="text-primary-container">class</span>=<span class="text-primary">"hidden md:flex w-64 bg-surface-container-low/30 backdrop-blur-3xl border-r border-border-subtle ..."</span>&gt;
+        <span class="text-outline-variant">&lt;!-- Sidebar Content --&gt;</span>
+    &lt;/<span class="text-secondary">nav</span>&gt;
+
+    <span class="text-outline-variant">&lt;!-- Main Content Area --&gt;</span>
+    &lt;<span class="text-secondary">main</span> <span class="text-primary-container">class</span>=<span class="text-primary">"flex-1 flex flex-col relative"</span>&gt;
+        <span class="text-outline-variant">&lt;!-- Content Canvas --&gt;</span>
+    &lt;/<span class="text-secondary">main</span>&gt;
+
+    <span class="text-outline-variant">&lt;!-- Mobile Bottom Bar (Hidden on Desktop) --&gt;</span>
+    <span class="bg-error/10 text-error line-through">&lt;nav class="md:hidden fixed bottom-0 w-full ..."&gt;&lt;/nav&gt;</span>
+    <span class="bg-primary/10 text-primary-fixed">&lt;<span class="text-secondary">nav</span> <span class="text-primary-container">class</span>=<span class="text-primary">"flex md:hidden fixed bottom-0 w-full bg-surface-glass/40 backdrop-blur-xl ..."</span>&gt;&lt;/<span class="text-secondary">nav</span>&gt;</span>
+
+&lt;/<span class="text-secondary">div</span>&gt;</code></pre>
+</div>
+</div>
+<p>Notice the oceanic syntax highlighting indicating the removal of the simplistic bottom bar and the addition of the glassmorphic variant.</p>
+<!-- Tags/Chips -->
+<div class="mt-md flex flex-wrap gap-xs">
+<span class="px-2 py-1 rounded-full glass-panel font-label-xs text-label-xs text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]">schedule</span>
+                                    10:42 AM
+                                </span>
+<span class="px-2 py-1 rounded-full glass-panel border-primary/30 font-label-xs text-label-xs text-primary flex items-center gap-1 shadow-[0_0_10px_rgba(46,230,166,0.1)]">
+<span class="material-symbols-outlined text-[12px]">check_circle</span>
+                                    Layout Validated
+                                </span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Composer Anchor (Floating Pill) -->
+<div class="absolute bottom-0 left-0 w-full p-margin-mobile md:p-md bg-gradient-to-t from-background-deep via-background-deep/90 to-transparent pt-xl z-20 pointer-events-none">
+<div class="max-w-3xl mx-auto pointer-events-auto">
+<div class="deep-glass-panel rounded-full flex items-center p-xs pl-md pr-xs shadow-[0_0_40px_rgba(46,230,166,0.2)] relative border border-primary/30 hover:border-primary/50 transition-colors duration-300">
+<!-- Subtle inner glow -->
+<div class="absolute inset-0 rounded-full shadow-[inset_0_0_20px_rgba(46,230,166,0.2)] pointer-events-none"></div>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-sm rounded-full hover:bg-surface-glass magnetic-btn cursor-none">
+<span class="material-symbols-outlined">attach_file</span>
+</button>
+<input class="flex-1 bg-transparent border-none text-on-surface font-body-md placeholder:text-on-surface-variant/50 focus:ring-0 px-sm h-12 cursor-none" placeholder="Message Trion..." type="text"/>
+<button class="w-10 h-10 rounded-full bg-surface-glass border border-primary/50 flex items-center justify-center text-primary hover:bg-primary hover:text-background-deep transition-all shadow-[0_0_15px_rgba(46,230,166,0.4)] hover:shadow-[0_0_25px_rgba(46,230,166,0.6)] magnetic-btn cursor-none">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">arrow_upward</span>
+</button>
+</div>
+<div class="text-center mt-xs">
+<span class="font-label-xs text-label-xs text-on-surface-variant/50">Trion Agent can make mistakes. Verify critical code.</span>
+</div>
+</div>
+</div>
+</main>
+<script>
+    // Custom Cursor Logic
+    const cursor = document.getElementById('custom-cursor');
+    const trail = document.getElementById('cursor-trail');
+    const magneticElements = document.querySelectorAll('.magnetic-btn, input, a, button');
+
+    document.addEventListener('mousemove', (e) => {
+        cursor.style.left = e.clientX + 'px';
+        cursor.style.top = e.clientY + 'px';
+        
+        // Trail follows with slight delay
+        setTimeout(() => {
+            trail.style.left = e.clientX + 'px';
+            trail.style.top = e.clientY + 'px';
+        }, 50);
+    });
+
+    magneticElements.forEach(el => {
+        el.addEventListener('mouseenter', () => {
+            cursor.classList.add('active');
+            trail.style.borderColor = 'rgba(46, 230, 166, 0.8)';
+            trail.style.transform = 'translate(-50%, -50%) scale(1.5)';
+        });
+        
+        el.addEventListener('mouseleave', () => {
+            cursor.classList.remove('active');
+            trail.style.borderColor = 'rgba(46, 230, 166, 0.4)';
+            trail.style.transform = 'translate(-50%, -50%) scale(1)';
+            el.style.transform = ''; // reset magnetic pull
+        });
+
+        // Magnetic pull effect
+        el.addEventListener('mousemove', (e) => {
+            const rect = el.getBoundingClientRect();
+            const x = e.clientX - rect.left - rect.width / 2;
+            const y = e.clientY - rect.top - rect.height / 2;
+            
+            // Apply slight translation based on cursor position relative to element center
+            if(el.classList.contains('magnetic-btn')) {
+                el.style.transform = `translate(${x * 0.2}px, ${y * 0.2}px) scale(1.05)`;
+            }
+        });
+    });
+</script>
+</body></html>

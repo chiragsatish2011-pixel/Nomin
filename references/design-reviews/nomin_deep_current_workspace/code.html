@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Nomin — Zen Workspace</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "navy-black": "#071018",
+                        "crisp-white": "#F7F9F8",
+                        "sea-green": "#2EE6A6",
+                        "deep-teal-black": "#03151c",
+                        "soft-coral": "#ff7c7c",
+                        
+                        "inverse-primary": "#c8c6c2",
+                        "on-primary": "#ffffff",
+                        "inverse-on-surface": "#f3f0f0",
+                        "secondary-container": "#e5e2da",
+                        "secondary": "#a0a4a8",
+                        "tertiary-fixed-dim": "#bacbba",
+                        "inverse-surface": "#303030",
+                        "tertiary-container": "#ebfce9",
+                        "outline": "#777871",
+                        "on-tertiary-fixed-variant": "#3c4a3d",
+                        "primary-container": "#f9f7f2",
+                        "surface-container": "#f0eded",
+                        "surface-container-high": "#eae7e7",
+                        "on-tertiary-container": "#667566",
+                        "surface": "#071018",
+                        "on-primary-fixed": "#1b1c19",
+                        "background": "#071018",
+                        "outline-variant": "rgba(255,255,255,0.1)",
+                        "surface-dim": "#dcd9d9",
+                        "on-secondary": "#ffffff",
+                        "on-primary-fixed-variant": "#474744",
+                        "primary": "#5e5e5b",
+                        "surface-container-low": "rgba(255,255,255,0.03)",
+                        "on-surface": "#F7F9F8",
+                        "secondary-fixed-dim": "#c9c6bf",
+                        "on-secondary-fixed-variant": "#474741",
+                        "tertiary": "#536254",
+                        "on-secondary-fixed": "#1c1c17",
+                        "error-container": "#ffdad6",
+                        "on-tertiary-fixed": "#111f14",
+                        "on-background": "#F7F9F8",
+                        "surface-variant": "rgba(255,255,255,0.05)",
+                        "on-secondary-container": "#F7F9F8",
+                        "on-error-container": "#93000a",
+                        "surface-bright": "#fcf9f8",
+                        "secondary-fixed": "#e5e2da",
+                        "surface-container-lowest": "rgba(0,0,0,0.4)",
+                        "primary-fixed-dim": "#c8c6c2",
+                        "surface-tint": "#5e5e5b",
+                        "primary-fixed": "#e4e2dd",
+                        "error": "#ff7c7c",
+                        "on-error": "#ffffff",
+                        "on-primary-container": "#71716d",
+                        "surface-container-highest": "rgba(255,255,255,0.08)",
+                        "on-surface-variant": "#a0a4a8",
+                        "on-tertiary": "#ffffff",
+                        "tertiary-fixed": "#d6e7d5"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "container-padding": "40px",
+                        "unit": "8px",
+                        "section-gap": "64px",
+                        "element-gap": "16px",
+                        "gutter": "24px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Plus Jakarta Sans"],
+                        "display-mobile": ["Plus Jakarta Sans"],
+                        "code-md": ["JetBrains Mono"],
+                        "headline-md": ["Plus Jakarta Sans"],
+                        "display": ["Plus Jakarta Sans"],
+                        "headline-sm": ["Plus Jakarta Sans"],
+                        "label-md": ["Plus Jakarta Sans"],
+                        "body-lg": ["Plus Jakarta Sans"]
+                    },
+                    "fontSize": {
+                        "body-md": ["16px", { "lineHeight": "1.7", "fontWeight": "400" }],
+                        "display-mobile": ["32px", { "lineHeight": "1.2", "fontWeight": "500" }],
+                        "code-md": ["15px", { "lineHeight": "1.7", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "1.4", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "display": ["42px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "500" }],
+                        "headline-sm": ["20px", { "lineHeight": "1.4", "fontWeight": "500" }],
+                        "label-md": ["14px", { "lineHeight": "1.5", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "body-lg": ["18px", { "lineHeight": "1.8", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.filled {
+            font-variation-settings: 'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+        }
+        #webgl-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+        }
+    </style>
+</head>
+<body class="bg-navy-black text-crisp-white font-body-md text-body-md h-full flex antialiased">
+<canvas id="webgl-canvas"></canvas>
+<!-- SideNavBar -->
+<nav class="hidden md:flex h-full w-[280px] fixed left-0 top-0 flex-col py-8 px-4 z-40 bg-navy-black/40 backdrop-blur-md border-r border-outline-variant">
+<div class="mb-8 px-4 flex items-center justify-between">
+<div>
+<h1 class="font-headline-sm text-headline-sm text-crisp-white">Nomin Studio</h1>
+<p class="font-label-md text-label-md text-secondary opacity-70">Editorial Mode</p>
+</div>
+<img alt="User Profile" class="w-10 h-10 rounded-full object-cover border border-outline-variant" data-alt="A small, circular avatar portrait of a creative professional in a sunlit architectural studio. Soft, natural lighting. Warm, inviting tones." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAbCJbEHNh86OTp2fSrgvsJLeTj28yHl5vt_SD0nUy6cGu-MKPoozNjJMCojSJCUYD8t_xNkUFLrwC37Gt14AvtOR_bOL7uyDHz1rVgbANyK6SCkUoJDkyk-g23-hAqqyGpVRSU4VthgklXoTcXnajvBwNfnQDNZvpx8ELGlgZ9kaDH4_D6xNjLrkCIBA7v2P8BfeDmx-2bKJWjJOBdKPAKN2Xx7z2BRh3py2dLIfJrsbbqyHZqRuB8"/>
+</div>
+<div class="flex-1 flex flex-col gap-1">
+<a class="flex items-center gap-3 px-4 py-3 text-crisp-white font-bold bg-surface-variant backdrop-blur-md rounded-xl transition-all duration-300 ease-in-out border-l-4 border-sea-green shadow-[0_0_15px_rgba(46,230,166,0.15)]" href="#">
+<span class="material-symbols-outlined text-sea-green">add</span>
+<span class="font-label-md text-label-md">New Thread</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-secondary hover:text-crisp-white hover:bg-surface-variant transition-all duration-300 ease-in-out rounded-xl" href="#">
+<span class="material-symbols-outlined">auto_stories</span>
+<span class="font-label-md text-label-md">Library</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-secondary hover:text-crisp-white hover:bg-surface-variant transition-all duration-300 ease-in-out rounded-xl" href="#">
+<span class="material-symbols-outlined">group</span>
+<span class="font-label-md text-label-md">Shared</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-secondary hover:text-crisp-white hover:bg-surface-variant transition-all duration-300 ease-in-out rounded-xl" href="#">
+<span class="material-symbols-outlined">archive</span>
+<span class="font-label-md text-label-md">Archive</span>
+</a>
+</div>
+<div class="mt-auto flex flex-col gap-1 pt-4 border-t border-outline-variant/30">
+<button class="w-full text-left px-4 py-3 mb-2 font-label-md text-label-md text-crisp-white border border-outline-variant rounded-xl hover:bg-surface-variant transition-colors flex items-center justify-center gap-2 backdrop-blur-sm">
+<span class="material-symbols-outlined text-[18px]">workspace_premium</span>
+                Upgrade to Pro
+            </button>
+<a class="flex items-center gap-3 px-4 py-2 text-secondary hover:text-crisp-white hover:bg-surface-variant transition-all duration-300 ease-in-out rounded-xl" href="#">
+<span class="material-symbols-outlined">help_outline</span>
+<span class="font-label-md text-label-md">Help</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-secondary hover:text-crisp-white hover:bg-surface-variant transition-all duration-300 ease-in-out rounded-xl" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</div>
+</nav>
+<!-- Main Workspace -->
+<main class="flex-1 ml-0 md:ml-[280px] flex flex-col h-full bg-transparent relative overflow-hidden">
+<!-- Top App Bar (Mobile Only Fallback for TopNav structure if needed, but per specs this is a deep work screen, so keeping it clean) -->
+<!-- Chat Area -->
+<div class="flex-1 overflow-y-auto w-full flex flex-col items-center pt-24 pb-48 px-6">
+<div class="w-full max-w-[720px] flex flex-col gap-12">
+<!-- User Message -->
+<div class="flex flex-col items-end w-full">
+<div class="max-w-[85%] bg-sea-green/10 backdrop-blur-md px-6 py-5 rounded-2xl rounded-tr-sm border border-sea-green/20 shadow-[0_4px_40px_-4px_rgba(46,230,166,0.1)]">
+<p class="font-body-lg text-body-lg text-crisp-white">
+                            I need to update the authentication middleware to support JWT refresh tokens. Can you show me the diff for `user_auth.ts`?
+                        </p>
+</div>
+</div>
+<!-- Nomin Response -->
+<div class="flex flex-col items-start w-full gap-6">
+<!-- Inline Planning Trace -->
+<div class="flex items-center gap-3 px-2">
+<span class="material-symbols-outlined text-sea-green text-[16px] animate-pulse">model_training</span>
+<span class="font-label-md text-label-md text-sea-green italic tracking-wide animate-pulse">Planning... Analyzing auth flow... Updating middleware...</span>
+</div>
+<!-- Editorial Reply -->
+<div class="w-full pl-2">
+<p class="font-body-lg text-body-lg text-crisp-white mb-6">
+                            I've updated the middleware to securely handle token rotation. The new implementation intercepts expired access tokens, validates the refresh token against the secure HttpOnly cookie, and issues a fresh pair if valid, seamlessly resuming the original request.
+                        </p>
+<!-- Code Block -->
+<div class="bg-deep-teal-black/80 backdrop-blur-md rounded-xl overflow-hidden border border-outline-variant/30">
+<div class="flex items-center justify-between px-4 py-2 bg-surface-variant/40 border-b border-outline-variant/20">
+<span class="font-label-md text-label-md text-secondary">user_auth.ts</span>
+<button class="text-secondary hover:text-crisp-white transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">content_copy</span>
+<span class="font-label-md text-label-md text-[12px]">Copy</span>
+</button>
+</div>
+<div class="p-6 overflow-x-auto">
+<pre class="font-code-md text-code-md text-crisp-white"><code class="language-typescript"><span class="text-secondary opacity-70">// Previous implementation</span>
+<span class="text-soft-coral opacity-70 line-through">export const requireAuth = async (req: Request, res: Response, next: NextFunction) =&gt; {</span>
+<span class="text-soft-coral opacity-70 line-through">  const token = req.headers.authorization?.split(' ')[1];</span>
+<span class="text-soft-coral opacity-70 line-through">  if (!token) return res.status(401).json({ error: 'Unauthorized' });</span>
+<span class="text-soft-coral opacity-70 line-through">  // ... simple verification</span>
+<span class="text-soft-coral opacity-70 line-through">};</span>
+
+<span class="text-secondary opacity-70">// New Implementation with Refresh Rotation</span>
+<span class="text-sea-green font-medium">export const</span> requireAuth = <span class="text-sea-green font-medium">async</span> (req: Request, res: Response, next: NextFunction) =&gt; {
+  <span class="text-sea-green font-medium">const</span> accessToken = req.headers.authorization?.<span class="text-crisp-white">split</span>(<span class="text-sea-green opacity-80">' '</span>)[<span class="text-sea-green">1</span>];
+  <span class="text-sea-green font-medium">const</span> refreshToken = req.cookies.refresh_token;
+
+  <span class="text-sea-green font-medium">if</span> (!accessToken &amp;&amp; !refreshToken) {
+    <span class="text-sea-green font-medium">return</span> res.<span class="text-crisp-white">status</span>(<span class="text-sea-green">401</span>).<span class="text-crisp-white">json</span>({ error: <span class="text-sea-green opacity-80">'Authentication required'</span> });
+  }
+
+  <span class="text-sea-green font-medium">try</span> {
+    <span class="text-sea-green font-medium">if</span> (accessToken) {
+      <span class="text-sea-green font-medium">const</span> decoded = jwt.<span class="text-crisp-white">verify</span>(accessToken, process.env.JWT_SECRET);
+      req.user = decoded;
+      <span class="text-sea-green font-medium">return</span> <span class="text-crisp-white">next</span>();
+    }
+  } <span class="text-sea-green font-medium">catch</span> (error) {
+    <span class="text-sea-green font-medium">if</span> (error.name === <span class="text-sea-green opacity-80">'TokenExpiredError'</span> &amp;&amp; refreshToken) {
+       <span class="text-secondary opacity-70">// Proceed to refresh logic below</span>
+    } <span class="text-sea-green font-medium">else</span> {
+       <span class="text-sea-green font-medium">return</span> res.<span class="text-crisp-white">status</span>(<span class="text-sea-green">401</span>).<span class="text-crisp-white">json</span>({ error: <span class="text-sea-green opacity-80">'Invalid token'</span> });
+    }
+  }
+  
+  <span class="text-secondary opacity-70">// Refresh flow logic...</span>
+};</code></pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Composer -->
+<div class="absolute bottom-0 left-0 w-full p-8 flex justify-center bg-gradient-to-t from-navy-black via-navy-black/90 to-transparent pointer-events-none">
+<div class="w-full max-w-[720px] pointer-events-auto relative">
+<div class="bg-navy-black/60 backdrop-blur-lg border border-outline-variant/40 rounded-[24px] p-2 flex flex-col shadow-[0_16px_64px_-12px_rgba(0,0,0,0.5)] relative z-10 focus-within:ring-1 focus-within:ring-sea-green focus-within:shadow-[0_0_20px_rgba(46,230,166,0.2)] transition-all">
+<textarea class="w-full bg-transparent border-none focus:ring-0 resize-none font-body-lg text-body-lg text-crisp-white px-4 py-3 h-20 placeholder:text-secondary" placeholder="Ask Nomin..." spellcheck="false"></textarea>
+<div class="flex items-center justify-between px-2 pb-1">
+<div class="flex items-center gap-2">
+<button class="p-2 text-secondary hover:text-crisp-white transition-colors rounded-full hover:bg-surface-variant">
+<span class="material-symbols-outlined text-[20px]">attach_file</span>
+</button>
+<div class="h-4 w-[1px] bg-outline-variant/40"></div>
+<span class="px-3 py-1 bg-surface-variant text-secondary font-label-md text-[12px] rounded-full flex items-center gap-1 border border-outline-variant/30">
+<span class="material-symbols-outlined text-[14px]">bolt</span>
+                                Trion 2.3
+                            </span>
+</div>
+<button class="w-10 h-10 rounded-full bg-sea-green text-navy-black flex items-center justify-center hover:opacity-90 hover:shadow-[0_0_15px_rgba(46,230,166,0.4)] transition-all">
+<span class="material-symbols-outlined filled text-[20px]">arrow_upward</span>
+</button>
+</div>
+</div>
+<!-- Subtle glow behind composer -->
+<div class="absolute inset-0 bg-navy-black/20 blur-[40px] rounded-[32px] -z-10"></div>
+</div>
+</div>
+</main>
+<script>
+    // Minimal WebGL setup for the background shader
+    const canvas = document.getElementById('webgl-canvas');
+    const gl = canvas.getContext('webgl');
+
+    if (gl) {
+        const vertexShaderSource = `
+            attribute vec2 a_position;
+            varying vec2 v_texCoord;
+            void main() {
+                gl_Position = vec4(a_position, 0.0, 1.0);
+                v_texCoord = a_position * 0.5 + 0.5;
+            }
+        `;
+
+        const fragmentShaderSource = `
+precision highp float;
+uniform float u_time;
+uniform vec2 u_resolution;
+varying vec2 v_texCoord;
+
+// Simplex noise for organic movement
+vec3 permute(vec3 x) { return mod(((x*34.0)+1.0)*x, 289.0); }
+float snoise(vec2 v){
+  const vec4 C = vec4(0.211324865405187, 0.366025403784439,
+           -0.577350269189626, 0.024390243902439);
+  vec2 i  = floor(v + dot(v, C.yy) );
+  vec2 x0 = v -   i + dot(i, C.xx);
+  vec2 i1;
+  i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  vec4 x12 = x0.xyxy + C.xxzz;
+  x12.xy -= i1;
+  i = mod(i, 289.0);
+  vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 ))
+  + i.x + vec3(0.0, i1.x, 1.0 ));
+  vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy),
+    dot(x12.zw,x12.zw)), 0.0);
+  m = m*m ;
+  m = m*m ;
+  vec3 x = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h = abs(x) - 0.5;
+  vec3 a0 = x - floor(x + 0.5);
+  float m1 = 1.79284291400159 - 0.85373472095314 * ( a0.x*a0.x + h.x*h.x );
+  float m2 = 1.79284291400159 - 0.85373472095314 * ( a0.y*a0.y + h.y*h.y );
+  float m3 = 1.79284291400159 - 0.85373472095314 * ( a0.z*a0.z + h.z*h.z );
+  vec3 g;
+  g.x  = a0.x  * x0.x  + h.x  * x0.y;
+  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m * vec3(m1,m2,m3), g);
+}
+
+void main() {
+    vec2 uv = v_texCoord;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= u_resolution.x / u_resolution.y;
+
+    float t = u_time * 0.15;
+    
+    // Soft, drifting oceanic caustics
+    float n1 = snoise(uv * 2.0 + t * 0.5);
+    float n2 = snoise(uv * 4.0 - t * 0.3);
+    float n3 = snoise(uv * 1.5 + vec2(t * 0.2, t * 0.1));
+    
+    float intensity = smoothstep(0.2, 0.8, n1 * n2 + n3 * 0.4);
+    
+    // Deep oceanic palette: Navy #071018 to deep teal
+    vec3 bgColor = vec3(0.027, 0.063, 0.094); 
+    vec3 accentColor = vec3(0.18, 0.9, 0.65); // #2EE6A6 (Sea Green)
+    
+    vec3 color = mix(bgColor, bgColor + accentColor * 0.08, intensity);
+    
+    // Vignette for depth
+    float vignette = 1.0 - length(p * 0.5);
+    color *= vignette;
+
+    gl_FragColor = vec4(color, 1.0);
+}
+        `;
+
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Error compiling shader:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+
+        const program = gl.createProgram();
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+        gl.linkProgram(program);
+
+        const positionAttributeLocation = gl.getAttribLocation(program, 'a_position');
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        const positions = [
+            -1.0, -1.0,
+             1.0, -1.0,
+            -1.0,  1.0,
+            -1.0,  1.0,
+             1.0, -1.0,
+             1.0,  1.0,
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+        gl.useProgram(program);
+        gl.enableVertexAttribArray(positionAttributeLocation);
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+        const timeUniformLocation = gl.getUniformLocation(program, 'u_time');
+        const resolutionUniformLocation = gl.getUniformLocation(program, 'u_resolution');
+
+        function resizeCanvasToDisplaySize(canvas) {
+            const displayWidth  = canvas.clientWidth;
+            const displayHeight = canvas.clientHeight;
+            if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+                canvas.width  = displayWidth;
+                canvas.height = displayHeight;
+            }
+        }
+
+        function render(time) {
+            time *= 0.001; // Convert to seconds
+
+            resizeCanvasToDisplaySize(gl.canvas);
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+            gl.uniform1f(timeUniformLocation, time);
+            gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
+
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            requestAnimationFrame(render);
+        }
+        requestAnimationFrame(render);
+    }
+</script>
+</body></html>

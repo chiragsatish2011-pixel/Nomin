@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Nomin — Light Theme Workspace</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/webgl-shader-element" type="module"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-bright": "#313a43",
+                        "on-secondary": "#480081",
+                        "outline-variant": "#3b4a42",
+                        "tertiary-container": "#c3ccd8",
+                        "primary-container": "#2ee6a6",
+                        "on-tertiary-container": "#4d5660",
+                        "background": "#0b141c",
+                        "tertiary-fixed": "#dae3ef",
+                        "inverse-surface": "#dae3ef",
+                        "surface-container-lowest": "#060f17",
+                        "on-secondary-fixed-variant": "#6700b5",
+                        "surface-container-highest": "#2d363f",
+                        "surface-dim": "#0b141c",
+                        "outline": "#85948a",
+                        "on-primary-fixed": "#002114",
+                        "on-error-container": "#ffdad6",
+                        "surface-container-low": "#141c25",
+                        "error-container": "#93000a",
+                        "inverse-on-surface": "#28313a",
+                        "tertiary-fixed-dim": "#bec7d3",
+                        "surface-container": "#182029",
+                        "on-tertiary-fixed-variant": "#3f4851",
+                        "secondary-fixed": "#efdbff",
+                        "surface-container-high": "#222b34",
+                        "border-subtle": "rgba(255, 255, 255, 0.1)",
+                        "on-primary-container": "#006244",
+                        "primary": "#80ffc7",
+                        "on-primary": "#003825",
+                        "surface-glass-hover": "rgba(255, 255, 255, 0.08)",
+                        "on-background": "#dae3ef",
+                        "background-deep": "#071018",
+                        "on-surface": "#F7F9F8",
+                        "on-tertiary": "#28313a",
+                        "surface-glass": "rgba(255, 255, 255, 0.04)",
+                        "on-secondary-container": "#dcb7ff",
+                        "secondary-fixed-dim": "#dcb8ff",
+                        "on-tertiary-fixed": "#131c25",
+                        "code-base": "rgba(3, 8, 12, 0.6)",
+                        "primary-fixed-dim": "#23e1a1",
+                        "error": "#ffb4ab",
+                        "secondary-container": "#7701d0",
+                        "secondary": "#dcb8ff",
+                        "tertiary": "#dfe8f4",
+                        "on-error": "#690005",
+                        "surface": "#0b141c",
+                        "inverse-primary": "#006c4b",
+                        "on-surface-variant": "#bacabf",
+                        "primary-fixed": "#52febc",
+                        "on-secondary-fixed": "#2c0051",
+                        "on-primary-fixed-variant": "#005137",
+                        "surface-tint": "#23e1a1",
+                        "surface-variant": "#2d363f"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "margin-mobile": "16px",
+                        "xs": "4px",
+                        "margin-desktop": "64px",
+                        "lg": "48px",
+                        "sm": "12px",
+                        "md": "24px",
+                        "gutter": "24px",
+                        "base": "8px",
+                        "xl": "80px"
+                    },
+                    fontFamily: {
+                        "body-md": ["Plus Jakarta Sans"],
+                        "headline-xl": ["Plus Jakarta Sans"],
+                        "headline-md": ["Plus Jakarta Sans"],
+                        "code-sm": ["JetBrains Mono"],
+                        "headline-sm": ["Plus Jakarta Sans"],
+                        "label-xs": ["Plus Jakarta Sans"],
+                        "body-lg": ["Plus Jakarta Sans"],
+                        "label-md": ["Plus Jakarta Sans"]
+                    },
+                    fontSize: {
+                        "body-md": ["16px", { lineHeight: "1.5", fontWeight: "400" }],
+                        "headline-xl": ["36px", { lineHeight: "1.2", letterSpacing: "-0.02em", fontWeight: "800" }],
+                        "headline-md": ["20px", { lineHeight: "1.4", fontWeight: "700" }],
+                        "code-sm": ["14px", { lineHeight: "1.7", fontWeight: "400" }],
+                        "headline-sm": ["18px", { lineHeight: "1.4", fontWeight: "600" }],
+                        "label-xs": ["12px", { lineHeight: "1.2", fontWeight: "500" }],
+                        "body-lg": ["18px", { lineHeight: "1.6", fontWeight: "400" }],
+                        "label-md": ["14px", { lineHeight: "1.2", fontWeight: "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Custom Styles & Overrides */
+        body {
+            background-color: #F7F9F8; /* Light Theme Base */
+            color: #0b141c; /* Deep Navy Text */
+            overflow: hidden;
+        }
+
+        /* Glassmorphism Utilities */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+        }
+        
+        .spectral-glass {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(64px);
+            -webkit-backdrop-filter: blur(64px);
+            border: 1px solid transparent;
+            border-image: linear-gradient(135deg, rgba(46, 230, 166, 0.3), rgba(119, 1, 208, 0.1)) 1;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+        }
+
+        .glass-panel-heavy {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+        }
+
+        /* Luminous Rim / Glows */
+        .luminous-rim {
+            position: relative;
+        }
+        .luminous-rim::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            padding: 1px;
+            background: linear-gradient(135deg, rgba(46, 230, 166, 0.4), rgba(46, 230, 166, 0.1), transparent);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+        
+        .bioluminescent-rim {
+            position: relative;
+        }
+        .bioluminescent-rim::after {
+            content: "";
+            position: absolute;
+            inset: -1px;
+            border-radius: inherit;
+            background: linear-gradient(135deg, rgba(46, 230, 166, 0.6), transparent, rgba(46, 230, 166, 0.2));
+            z-index: -1;
+            filter: blur(4px);
+            opacity: 0.5;
+            transition: opacity 0.3s ease;
+        }
+        .bioluminescent-rim:focus-within::after {
+            opacity: 1;
+            filter: blur(6px);
+        }
+        
+        .emerald-glow {
+            box-shadow: 0 0 15px rgba(46, 230, 166, 0.4);
+            animation: pulse-glow 3s infinite alternate;
+        }
+        
+        @keyframes pulse-glow {
+            0% { box-shadow: 0 0 10px rgba(46, 230, 166, 0.3); }
+            100% { box-shadow: 0 0 25px rgba(46, 230, 166, 0.6); }
+        }
+
+        .glow-hover:hover {
+            box-shadow: 0 0 20px rgba(46, 230, 166, 0.3);
+            border-color: rgba(46, 230, 166, 0.5);
+            transition: all 0.3s ease;
+        }
+
+        /* Bioluminescence Animation */
+        @keyframes bio-reveal {
+            0% { opacity: 0; filter: blur(10px); transform: translateY(10px); }
+            100% { opacity: 1; filter: blur(0); transform: translateY(0); }
+        }
+        .animate-reveal {
+            animation: bio-reveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        
+        /* Blur to Clear Entrance */
+        @keyframes blur-to-clear {
+            0% { opacity: 0; filter: blur(20px); transform: scale(0.98); }
+            100% { opacity: 1; filter: blur(0); transform: scale(1); }
+        }
+        .blur-entrance {
+            animation: blur-to-clear 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        
+        /* Typewriter effect stub */
+        .typewriter {
+            overflow: hidden;
+            white-space: nowrap;
+            border-right: 2px solid #2EE6A6;
+            animation: typing 2s steps(40, end), blink-caret .75s step-end infinite;
+        }
+        @keyframes typing { from { width: 0 } to { width: 100% } }
+        @keyframes blink-caret { from, to { border-color: transparent } 50% { border-color: #2EE6A6; } }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(46, 230, 166, 0.5); }
+
+        /* Code Block Styling - Keep Dark for contrast */
+        .code-block {
+            background-color: #0b141c;
+            color: #F7F9F8;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col md:flex-row antialiased relative">
+<!-- Prismatic WebGL Background -->
+<!-- STITCH_SHADER_START:ANIMATION_62 class="fixed inset-0 w-full h-full -z-10" -->
+<div class="fixed inset-0 w-full h-full -z-10" style="display:block;">
+<canvas id="shader-canvas-ANIMATION_62" style="display:block;width:100%;height:100%"></canvas>
+<script>
+(function() {
+  const canvas = document.getElementById('shader-canvas-ANIMATION_62');
+
+  // Sync the WebGL drawing-buffer size with the CSS-driven layout size.
+  // This fires on initial layout and whenever the element is resized.
+  function syncSize() {
+    const w = canvas.clientWidth  || 1280;
+    const h = canvas.clientHeight || 720;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width  = w;
+      canvas.height = h;
+    }
+  }
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(syncSize).observe(canvas);
+  }
+  syncSize();
+
+  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  if (!gl) return;
+  const vs = `attribute vec2 a_position;
+varying vec2 v_texCoord;
+void main() {
+  v_texCoord = a_position * 0.5 + 0.5;
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}`;
+  const fs = `precision highp float;
+uniform float u_time;
+uniform vec2 u_resolution;
+uniform vec2 u_mouse;
+varying vec2 v_texCoord;
+
+vec3 permute(vec3 x) { return mod(((x*34.0)+1.0)*x, 289.0); }
+float snoise(vec2 v){
+  const vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
+  vec2 i  = floor(v + dot(v, C.yy) );
+  vec2 x0 = v -   i + dot(i, C.xx);
+  vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  vec4 x12 = x0.xyxy + C.xxzz;
+  x12.xy -= i1;
+  i = mod(i, 289.0);
+  vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 )) + i.x + vec3(0.0, i1.x, 1.0 ));
+  vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+  m = m*m; m = m*m;
+  vec3 x = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h = abs(x) - 0.5;
+  vec3 a0 = x - floor(x + 0.5);
+  float m1 = 1.79284291400159 - 0.85373472095314 * ( a0.x*a0.x + h.x*h.x );
+  float m2 = 1.79284291400159 - 0.85373472095314 * ( a0.y*a0.y + h.y*h.y );
+  float m3 = 1.79284291400159 - 0.85373472095314 * ( a0.z*a0.z + h.z*h.z );
+  vec3 g;
+  g.x  = a0.x  * x0.x  + h.x  * x0.y;
+  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m * vec3(m1,m2,m3), g);
+}
+
+void main() {
+    vec2 uv = v_texCoord;
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= u_resolution.x / u_resolution.y;
+
+    float t = u_time * 0.03;
+    vec2 mouse = u_mouse / u_resolution;
+    
+    // Light-theme optimized prismatic caustics
+    float n1 = snoise(uv * 1.5 + vec2(t * 0.4, t * 0.15));
+    float n2 = snoise(uv * 2.5 - vec2(t * 0.2, t * 0.35));
+    float n3 = snoise(uv * 0.8 + vec2(mouse.x * 0.05, t * 0.1));
+    
+    float intensity = smoothstep(0.1, 0.9, n1 * n2 + n3 * 0.4 + 0.4);
+    
+    // Prismatic Colors (Emerald, Blue, Purple)
+    vec3 emerald = vec3(0.18, 0.9, 0.65); // #2EE6A6
+    vec3 blue = vec3(0.3, 0.6, 1.0);
+    vec3 purple = vec3(0.6, 0.4, 0.9);
+    
+    vec3 spectrum = mix(emerald, blue, n1 * 0.5 + 0.5);
+    spectrum = mix(spectrum, purple, n2 * 0.5 + 0.5);
+    
+    // Base white for light theme
+    vec3 white = vec3(0.97, 0.98, 0.975);
+    
+    // Staining the white background with the prismatic current
+    vec3 color = mix(white, spectrum, intensity * 0.08);
+    
+    // Refractive highlights
+    float highlight = pow(intensity, 4.0);
+    color = mix(color, spectrum, highlight * 0.1);
+    
+    // Subtle bioluminescent mouse glow
+    float dist = length(uv - mouse);
+    color += emerald * (0.012 / (dist + 0.4)) * intensity;
+    
+    // Soft cinematic vignette
+    float vignette = 1.0 - length(p * 0.3);
+    color *= mix(0.99, 1.0, vignette);
+
+    gl_FragColor = vec4(color, 1.0);
+}`;
+  function cs(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, cs(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, cs(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const pos = gl.getAttribLocation(prog, 'a_position');
+  gl.enableVertexAttribArray(pos);
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+  const uTime = gl.getUniformLocation(prog, 'u_time');
+  const uRes = gl.getUniformLocation(prog, 'u_resolution');
+  const uMouse = gl.getUniformLocation(prog, 'u_mouse');
+
+  // u_mouse is in pixel coordinates matching u_resolution (ShaderToy convention).
+  // Shaders that need normalized coords should use: u_mouse / u_resolution.
+  let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+  window.addEventListener('mousemove', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width && rect.height) {
+      const nx = (event.clientX - rect.left) / rect.width;
+      const ny = 1.0 - (event.clientY - rect.top) / rect.height;
+      mouse.x = nx * canvas.width;
+      mouse.y = ny * canvas.height;
+    }
+  });
+
+  function render(t) {
+    if (typeof ResizeObserver === 'undefined') syncSize();
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    if (uTime) gl.uniform1f(uTime, t * 0.001);
+    if (uRes) gl.uniform2f(uRes, canvas.width, canvas.height);
+    if (uMouse) gl.uniform2f(uMouse, mouse.x, mouse.y);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    requestAnimationFrame(render);
+  }
+  render(0);
+})();
+</script>
+</div>
+<!-- STITCH_SHADER_END:ANIMATION_62 -->
+<!-- SideNavBar (Desktop) -->
+<nav class="spectral-glass h-full w-64 left-0 hidden md:flex flex-col border-r z-20 shrink-0">
+<!-- Header -->
+<div class="p-md border-b border-black/5 flex items-center gap-sm">
+<div class="w-10 h-10 rounded-lg bg-primary-container/20 flex items-center justify-center luminous-rim emerald-glow">
+<span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">terminal</span>
+</div>
+<div>
+<h1 class="font-headline-sm text-headline-sm font-extrabold text-background">Trion Agent</h1>
+<p class="font-label-xs text-label-xs text-on-tertiary-container">Technical Workspace</p>
+</div>
+</div>
+<!-- Navigation Links -->
+<div class="flex-1 overflow-y-auto p-sm flex flex-col gap-xs mt-sm">
+<!-- Active Tab -->
+<a class="flex items-center gap-sm px-sm py-2 rounded-lg text-primary-container font-bold bg-primary-container/10 luminous-rim transition-all duration-300 transform scale-95 magnetic-element" href="#">
+<span class="material-symbols-outlined">add_box</span>
+<span class="font-body-md text-body-md">New Thread</span>
+</a>
+<!-- Inactive Tabs -->
+<a class="flex items-center gap-sm px-sm py-2 rounded-lg text-on-tertiary-container font-medium hover:bg-black/5 hover:text-background transition-all duration-300 magnetic-element" href="#">
+<span class="material-symbols-outlined">database</span>
+<span class="font-body-md text-body-md">Library</span>
+</a>
+<a class="flex items-center gap-sm px-sm py-2 rounded-lg text-on-tertiary-container font-medium hover:bg-black/5 hover:text-background transition-all duration-300 magnetic-element" href="#">
+<span class="material-symbols-outlined">share</span>
+<span class="font-body-md text-body-md">Shared</span>
+</a>
+<a class="flex items-center gap-sm px-sm py-2 rounded-lg text-on-tertiary-container font-medium hover:bg-black/5 hover:text-background transition-all duration-300 magnetic-element" href="#">
+<span class="material-symbols-outlined">inventory_2</span>
+<span class="font-body-md text-body-md">Archive</span>
+</a>
+</div>
+<!-- Footer -->
+<div class="p-sm border-t border-black/5 flex flex-col gap-xs">
+<button class="w-full py-2 rounded-lg bg-background text-on-surface font-label-md text-label-md glow-hover transition-all mb-sm flex items-center justify-center gap-2 magnetic-element">
+<span class="material-symbols-outlined text-[16px]">bolt</span> Upgrade to Pro
+            </button>
+<a class="flex items-center gap-sm px-sm py-2 rounded-lg text-on-tertiary-container font-medium hover:bg-black/5 hover:text-background transition-all duration-300 magnetic-element" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+<a class="flex items-center gap-sm px-sm py-2 rounded-lg text-on-tertiary-container font-medium hover:bg-black/5 hover:text-background transition-all duration-300 magnetic-element" href="#">
+<span class="material-symbols-outlined">help</span>
+<span class="font-label-md text-label-md">Help</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col h-full relative z-10 overflow-hidden blur-entrance">
+<!-- TopNavBar -->
+<header class="spectral-glass w-full top-0 sticky z-40 flex justify-between items-center px-margin-mobile md:px-margin-desktop h-16 border-b">
+<div class="flex items-center gap-md">
+<!-- Mobile Menu Button -->
+<button class="md:hidden text-background hover:text-primary-container transition-colors magnetic-element">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<div class="font-headline-sm text-headline-sm font-extrabold text-background tracking-tight">Nomin</div>
+<div class="hidden md:block w-px h-4 bg-black/10 mx-2"></div>
+<nav class="hidden md:flex gap-4">
+<span class="font-label-md text-label-md text-primary-container">Current Project &gt; Authentication Flow</span>
+</nav>
+</div>
+<div class="flex items-center gap-sm">
+<button class="text-on-tertiary-container hover:text-primary-container transition-colors p-2 rounded-full hover:bg-black/5 magnetic-element">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-tertiary-container hover:text-primary-container transition-colors p-2 rounded-full hover:bg-black/5 magnetic-element">
+<span class="material-symbols-outlined">history</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-tertiary-container ml-2 overflow-hidden border border-black/10 magnetic-element">
+<img alt="User Profile" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDI0aypnM_aegJEWrmLAdTyHI4V7yzjwys9AKUeGgSBA_QJ51EwDkNWfVjrMlPK-pGtgnTsoNqTaXWdMNITAjQL-SxNbc2nmTJiMfcIR2gHAJRXhGeWjh-xfWE--oErr6OFa4RTfjInfzUeZEzSo9Ugym53BDg7FTjiBCd2m2tkjSqV0HdH86NDjXwvAL4zybiMlh0_8T_AGnmCWvw-ai7_FQGzv_YSkLGklvJPg1dqEG9lNDgZA4lk"/>
+</div>
+</div>
+</header>
+<!-- Chat Canvas -->
+<div class="flex-1 overflow-y-auto px-margin-mobile md:px-margin-desktop py-lg pb-[120px] scroll-smooth" id="chat-container">
+<div class="max-w-3xl mx-auto flex flex-col gap-xl">
+<!-- Initial State / Intro (Simulated) -->
+<div class="flex flex-col items-center justify-center text-center mt-lg mb-xl animate-reveal" style="animation-delay: 0.1s;">
+<div class="w-16 h-16 rounded-2xl bg-black/5 flex items-center justify-center mb-md luminous-rim relative">
+<span class="material-symbols-outlined text-[32px] text-primary-container drop-shadow-[0_0_10px_rgba(46,230,166,0.5)]">graphic_eq</span>
+</div>
+<h2 class="font-headline-xl text-headline-xl text-background mb-sm">A calm room to turn intent into working software.</h2>
+<p class="font-body-lg text-body-lg text-on-tertiary-container max-w-lg">Trion plans, builds, and runs your project in a live sandbox — then brings the result up in a browser.</p>
+</div>
+<!-- Example User Message -->
+<div class="flex justify-end animate-reveal" style="animation-delay: 0.3s;">
+<div class="glass-panel-heavy p-md rounded-2xl rounded-tr-none max-w-xl border border-primary-container/30 shadow-[0_4px_20px_rgba(46,230,166,0.1)]">
+<p class="font-body-md text-body-md text-background">Can you build a simple authentication flow using React and Tailwind? I need a login screen and a signup screen.</p>
+</div>
+</div>
+<!-- Example AI Response -->
+<div class="flex justify-start animate-reveal" style="animation-delay: 0.6s;">
+<div class="flex flex-col gap-sm max-w-2xl w-full">
+<!-- Reasoning Trace -->
+<div class="glass-panel p-sm rounded-xl border border-black/5 flex flex-col gap-2 opacity-80 hover:opacity-100 transition-opacity">
+<div class="flex items-center gap-2 text-on-tertiary-container">
+<span class="material-symbols-outlined text-[16px] text-primary-container animate-pulse">model_training</span>
+<span class="font-label-xs text-label-xs uppercase tracking-wider">Thinking Process</span>
+</div>
+<ul class="font-code-sm text-code-sm text-on-tertiary-container pl-6 list-disc opacity-70">
+<li>Analyzing request: React + Tailwind Auth Flow.</li>
+<li>Required components: Login Form, Signup Form, state management for toggling.</li>
+<li>Design system constraints: Follow Light Theme Workspace aesthetic.</li>
+<li>Action plan: Generate functional components with shared styling.</li>
+</ul>
+</div>
+<!-- Response Body -->
+<div class="glass-panel p-md rounded-2xl rounded-tl-none border border-black/10">
+<p class="font-body-md text-body-md text-background mb-md">I can certainly help with that. I've designed a clean, responsive authentication flow using React and Tailwind CSS. It includes a toggle between Login and Sign Up states, featuring glassmorphism elements to match your preferred aesthetic.</p>
+<!-- Code Block -->
+<div class="rounded-xl overflow-hidden code-block flex flex-col mt-sm">
+<div class="bg-black/40 px-4 py-2 flex justify-between items-center border-b border-white/10">
+<span class="font-label-xs text-label-xs text-on-surface-variant font-mono">AuthFlow.jsx</span>
+<button class="text-on-surface-variant hover:text-primary-container transition-colors flex items-center gap-1 magnetic-element">
+<span class="material-symbols-outlined text-[14px]">content_copy</span>
+<span class="font-label-xs text-label-xs">Copy</span>
+</button>
+</div>
+<pre class="p-4 font-code-sm text-code-sm overflow-x-auto text-primary-fixed-dim"><code><span class="text-secondary-fixed">import</span> React, { useState } <span class="text-secondary-fixed">from</span> <span class="text-primary-container">'react'</span>;
+
+<span class="text-secondary-fixed">export default function</span> AuthFlow() {
+  <span class="text-secondary-fixed">const</span> [isLogin, setIsLogin] = useState(<span class="text-primary-container">true</span>);
+
+  <span class="text-secondary-fixed">return</span> (
+    &lt;<span class="text-primary-container">div</span> className="min-h-screen flex items-center justify-center bg-gray-50"&gt;
+      &lt;<span class="text-primary-container">div</span> className="max-w-md w-full p-8 bg-white rounded-2xl shadow-xl"&gt;
+        &lt;<span class="text-primary-container">h2</span> className="text-2xl font-bold mb-6 text-center"&gt;
+          {isLogin ? 'Welcome Back' : 'Create Account'}
+        &lt;/<span class="text-primary-container">h2</span>&gt;
+        {/* Form fields would go here */}
+      &lt;/<span class="text-primary-container">div</span>&gt;
+    &lt;/<span class="text-primary-container">div</span>&gt;
+  );
+}</code></pre>
+</div>
+</div>
+</div>
+</div>
+<!-- System Status Indicator (Simulating generation) -->
+<div class="flex justify-start animate-reveal" style="animation-delay: 1.2s;">
+<div class="flex items-center gap-2 text-primary-container bg-primary-container/10 px-4 py-2 rounded-full border border-primary-container/20">
+<span class="material-symbols-outlined animate-spin text-[16px]">sync</span>
+<span class="font-label-xs text-label-xs">Deploying to sandbox...</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Input Composer (Anchored Bottom) -->
+<div class="absolute bottom-0 left-0 w-full p-margin-mobile md:p-margin-desktop bg-gradient-to-t from-transparent via-[#F7F9F8]/50 to-transparent pt-xl pointer-events-none flex justify-center pb-[max(env(safe-area-inset-bottom),_24px)]">
+<div class="glass-panel-heavy bioluminescent-rim max-w-3xl w-full rounded-full p-2 flex items-center gap-2 pointer-events-auto shadow-[0_8px_32px_rgba(0,0,0,0.1)] border-black/10 transition-all duration-300">
+<button class="p-2 text-on-tertiary-container hover:text-primary-container transition-colors rounded-full hover:bg-black/5 ml-1 magnetic-element">
+<span class="material-symbols-outlined">add</span>
+</button>
+<input class="flex-1 bg-transparent border-none focus:ring-0 font-body-md text-body-md text-background placeholder-on-tertiary-container/50 h-10 px-2" placeholder="Message Trion..." type="text"/>
+<button class="p-2 bg-background text-on-surface rounded-full hover:bg-primary-container hover:text-background transition-colors mr-1 glow-hover flex items-center justify-center w-10 h-10 magnetic-element">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">arrow_upward</span>
+</button>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile) -->
+<nav class="glass-panel-heavy fixed bottom-0 left-0 w-full md:hidden z-50 flex justify-around items-center py-base pb-[max(env(safe-area-inset-bottom),_8px)] border-t border-black/5">
+<a class="flex flex-col items-center justify-center text-primary-container gap-1 p-2" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">chat</span>
+<span class="font-label-xs text-label-xs">Threads</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-tertiary-container gap-1 p-2 active:bg-black/5 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined">database</span>
+<span class="font-label-xs text-label-xs">Library</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-tertiary-container gap-1 p-2 active:bg-black/5 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined">share</span>
+<span class="font-label-xs text-label-xs">Shared</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-tertiary-container gap-1 p-2 active:bg-black/5 rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined">inventory_2</span>
+<span class="font-label-xs text-label-xs">Archive</span>
+</a>
+</nav>
+<!-- Custom Cursor (Optional, for web) -->
+<div class="hidden md:block fixed w-3 h-3 bg-primary-container rounded-full pointer-events-none z-[100] mix-blend-difference transition-transform duration-100 ease-out shadow-[0_0_10px_#2EE6A6]" id="custom-cursor" style="transform: translate(-50%, -50%);"></div>
+<div class="hidden md:block fixed w-8 h-8 border border-primary-container/50 rounded-full pointer-events-none z-[99] mix-blend-difference transition-all duration-300 ease-out shadow-[0_0_15px_rgba(46,230,166,0.3)]" id="custom-cursor-ring" style="transform: translate(-50%, -50%);"></div>
+<script>
+        // Simple magnetic effect and custom cursor logic
+        document.addEventListener('DOMContentLoaded', () => {
+            const cursor = document.getElementById('custom-cursor');
+            const ring = document.getElementById('custom-cursor-ring');
+            
+            // Trail logic
+            const trailElements = [];
+            const maxTrails = 10;
+            
+            for(let i=0; i<maxTrails; i++) {
+                const trail = document.createElement('div');
+                trail.className = 'hidden md:block fixed rounded-full pointer-events-none z-[98] mix-blend-difference';
+                trail.style.backgroundColor = `rgba(46, 230, 166, ${1 - i/maxTrails})`;
+                trail.style.width = `${10 - i}px`;
+                trail.style.height = `${10 - i}px`;
+                trail.style.transition = `all ${0.05 * i}s ease-out`;
+                document.body.appendChild(trail);
+                trailElements.push(trail);
+            }
+
+            if(window.matchMedia("(min-width: 768px)").matches && cursor && ring) {
+                document.addEventListener('mousemove', (e) => {
+                    cursor.style.left = e.clientX + 'px';
+                    cursor.style.top = e.clientY + 'px';
+                    
+                    // Delay ring slightly for organic feel
+                    setTimeout(() => {
+                        ring.style.left = e.clientX + 'px';
+                        ring.style.top = e.clientY + 'px';
+                    }, 50);
+                    
+                    // Update trails
+                    trailElements.forEach((trail, index) => {
+                         setTimeout(() => {
+                            trail.style.left = (e.clientX - (10-index)/2) + 'px';
+                            trail.style.top = (e.clientY - (10-index)/2) + 'px';
+                        }, 20 * index);
+                    });
+                });
+
+                // Magnetic Elements
+                const magneticElements = document.querySelectorAll('.magnetic-element');
+                magneticElements.forEach(el => {
+                    el.addEventListener('mousemove', (e) => {
+                        const rect = el.getBoundingClientRect();
+                        const x = e.clientX - rect.left - rect.width / 2;
+                        const y = e.clientY - rect.top - rect.height / 2;
+                        
+                        el.style.transform = `translate(${x * 0.2}px, ${y * 0.2}px)`;
+                        ring.style.transform = `translate(-50%, -50%) scale(1.5)`;
+                        ring.style.borderColor = 'rgba(46, 230, 166, 1)';
+                    });
+                    
+                    el.addEventListener('mouseleave', () => {
+                        el.style.transform = 'translate(0px, 0px) scale(1)';
+                        if(el.classList.contains('scale-95')) {
+                             el.style.transform = 'translate(0px, 0px) scale(0.95)';
+                        }
+                        ring.style.transform = `translate(-50%, -50%) scale(1)`;
+                        ring.style.borderColor = 'rgba(46, 230, 166, 0.5)';
+                    });
+                });
+            }
+        });
+    </script>
+</body></html>
