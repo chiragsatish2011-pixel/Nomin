@@ -8,8 +8,8 @@
 # 1. Node.js 20+ installed
 # 2. Provider credentials configured in the running app. The runtime health
 #    endpoint reports the redacted active-key count; it never exposes secrets.
-# 3. From coding-agent/web:
-cd /Volumes/R\ 50/Trion\ 1.4/coding-agent/web
+# 3. From the web app directory (where package.json lives):
+cd "<repo-checkout>/Trion 1.4/web"
 npm ci
 ```
 
@@ -28,7 +28,7 @@ improve failover; they do not multiply a free-tier allowance.
 ### Terminal 1 — Start Server (keep running for all live-call levels)
 
 ```bash
-cd /Volumes/R\ 50/Trion\ 1.4/coding-agent/web
+cd "<repo-checkout>/Trion 1.4/web"
 TRION_BENCH=1 TRION_PERF=1 npm run dev
 ```
 

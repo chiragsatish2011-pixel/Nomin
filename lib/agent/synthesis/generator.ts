@@ -32,8 +32,9 @@ export async function synthesizeResult(
 
   // This is a deterministic completion gate, not an instruction the model can
   // ignore. It also avoids spending a synthesis request merely to turn missing
-  // evidence into reassuring prose.
-  if (verification?.required && verification.status !== "passed") {
+  // evidence into reassuring prose. "started" passes through: a live dev server
+  // is reportable final evidence, and its honest message travels with it.
+  if (verification?.required && verification.status !== "passed" && verification.status !== "started") {
     return {
       message: verification.status === "not_run"
         ? "The changes are in place, but Trion still needs to run the final project check before it can confirm the result is ready."
@@ -128,8 +129,12 @@ export function describeTraceLiterally(toolTrace: ToolTraceEntry[], plan: PlanDo
  * trace stays available behind the optional activity detail, never in the
  * primary reply. */
 export function pausedTaskSynthesis(toolTrace: ToolTraceEntry[], error?: Error): SynthesisDoc {
-  const localAllowanceLimited = /included building allowance|building allowance is currently exhausted/i.test(error?.message ?? "");
-  const capacityLimited = /shared model-request limit|rate limit|resourceexhausted|too many requests/i.test(error?.message ?? "");
+  const detail = error?.message ?? "";
+  const localAllowanceLimited = /included building allowance|building allowance is currently exhausted/i.test(detail);
+  const capacityLimited = /shared model-request limit|rate limit|resourceexhausted|too many requests/i.test(detail);
+  const bridgeUnavailable = /webcontainer bridge unavailable|client disconnected|browser tool result/i.test(detail);
+  const verificationFailed = /final verification|verification command|build check/i.test(detail);
+  const timedOut = /timed out|operation exceeded/i.test(detail);
   const noConfirmedAction = !toolTrace.some((entry) => entry.status === "success");
   return {
     message: localAllowanceLimited
@@ -140,22 +145,43 @@ export function pausedTaskSynthesis(toolTrace: ToolTraceEntry[], error?: Error):
       ? noConfirmedAction
         ? "Trion could not start the saved build while the service was temporarily busy. No work is being shown as complete. Retry in about a minute to continue from the first step."
         : "Trion reached a temporary service limit after completing part of the saved build. Retry in about a minute to continue from the next unfinished step."
+      : bridgeUnavailable
+      ? "Trion paused because the browser workspace stopped responding after confirmed work. Keep this Trion tab open until the tool finishes, then retry from the next unfinished step."
+      : verificationFailed
+      ? "Trion paused because the final project check did not complete successfully. Confirm the reported build or test issue, then retry the saved verification step."
+      : timedOut
+      ? "Trion paused because the next build step timed out after confirmed work. Retry continues from the next unfinished step without repeating completed work."
       : noConfirmedAction
         ? "Trion could not start the next saved build step. No work is being shown as complete. Retry continues from that exact step."
         : "Trion paused after confirmed work was completed. Retry continues from the next unfinished step.",
-    next_action_hint: "Retry continues the saved task instead of starting over.",
+    next_action_hint: bridgeUnavailable
+      ? "Keep the workspace tab open, wait for it to become ready, then retry the saved task."
+      : verificationFailed
+        ? "Review the failed project check and retry; completed file changes will not be repeated."
+        : "Retry continues the saved task instead of starting over.",
   };
 }
 
 /** A planning failure is not an execution checkpoint. Keep its recovery copy
  * stage-accurate so the user is never told a nonexistent build step was saved. */
 export function planningFailureSynthesis(error?: Error): SynthesisDoc {
-  const capacityLimited = /shared model-request limit|rate limit|resourceexhausted|too many requests/i.test(error?.message ?? "");
+  const detail = error?.message ?? "";
+  const capacityLimited = /shared model-request limit|rate limit|resourceexhausted|too many requests/i.test(detail);
+  const missingProvider = /not configured in this environment/i.test(detail);
+  const timedOut = /timed out|timeout/i.test(detail);
   return {
     message: capacityLimited
       ? "Trion could not prepare the build plan because the shared service is temporarily busy. No build steps were started. Try again in about a minute."
+      : missingProvider
+        ? "Trion could not prepare the build plan because no model connection is configured. Add a connection in Settings, then start a new request."
+        : timedOut
+          ? "Trion could not prepare the build plan because the model service did not respond in time. No build steps were started; retry the request or use your own connection in Settings."
       : "Trion could not prepare the build plan, so no project work was started. Try again to create a fresh plan.",
-    next_action_hint: "Retry planning; there are no partial project changes to recover.",
+    next_action_hint: missingProvider
+      ? "Open Settings → Connections and activate a model connection, then start a new request."
+      : timedOut
+        ? "Retry once, or open Settings → Connections to use your own model provider."
+        : "Retry planning; there are no partial project changes to recover.",
   };
 }
 
@@ -203,7 +229,13 @@ Present this approach to the user.`,
 
   // 800 tokens cut the answer off mid-sentence once it was writing real
   // Markdown with a file list and a tradeoffs section.
-  return completeSynthesis(messages, input.model, 1_200, "plan_only");
+  const synthesis = await completeSynthesis(messages, input.model, 1_200, "plan_only");
+  // Trion automatically selects the appropriate execution path; it does not
+  // expose a Think/Execute mode toggle. A model-generated hint such as
+  // “switch to Execute mode” is therefore an impossible instruction even when
+  // the plan itself is good. Keep the plan prose, but make the next action a
+  // stable, truthful product instruction.
+  return { ...synthesis, next_action_hint: "Send the request when you are ready to build it." };
 }
 
 export async function synthesizeDirectAnswer(input: NormalInput, taskState?: string): Promise<SynthesisDoc> {
@@ -242,8 +274,21 @@ export async function synthesizeDirectAnswer(input: NormalInput, taskState?: str
 
   messages.push({ role: "user", content: input.user_message });
 
-  // Enough room for a code example without truncating it.
-  return completeSynthesis(messages, input.model, 1_200, "direct_answer");
+  // Enough room for a code example without truncating it. A direct-answer
+  // model can still be induced to quote its hidden instruction/context block;
+  // do not rely on a refusal instruction alone when the output itself exposes
+  // that failure. This boundary keeps the response useful without revealing
+  // internal prompts, contracts, or routing details.
+  const synthesis = await completeSynthesis(messages, input.model, 1_200, "direct_answer");
+  if (!containsInternalDisclosure(synthesis.message)) return synthesis;
+  return {
+    message: "I can’t provide internal instructions or hidden system details. I can explain how Trion works at a high level instead.",
+    next_action_hint: "Ask about a specific capability or workflow outcome.",
+  };
+}
+
+function containsInternalDisclosure(message: string): boolean {
+  return /(?:\byou are trion,? a coding agent\b|\breturn only valid json\b|\bavailable tools:\b|\b(?:intent|plan|execute)_system_prompt\b|\bturn contract\b.{0,160}\bstep\s*[0-5]\b|\bnormalizeInput\b|\bclassifyIntent\b|\bgeneratePlanDoc\b|\bexecuteSteps\b|\bsynthesizeResult\b)/is.test(message);
 }
 
 function buildSynthesisPrompt(

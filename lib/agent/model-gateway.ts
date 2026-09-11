@@ -3,7 +3,7 @@
 
 import type { AgentTurn, NimMessage, TrionTier } from "./types";
 import { queuedCompletion, queuedTextCompletion } from "@/lib/nim/internal-client";
-import { sanitize, assertNoLeaks } from "./sanitize";
+import { sanitize, sanitizeToolInput, assertNoLeaks } from "./sanitize";
 import { perf, estTokensOf } from "./perf";
 import { STATIC_SYSTEM_PROMPTS } from "./static-prompts";
 import { recordUsage, type CallType } from "./token-ledger";
@@ -28,7 +28,17 @@ export interface ModelOptions {
    * generate it; it must not inherit the timeout of a read-path selection.
    * This remains a bounded policy, not an open-ended wait.
    */
-  reliability?: { timeoutMs: number; maxAttempts: number };
+  reliability?: { timeoutMs: number; maxAttempts: number; deadlineMs?: number };
+  /**
+   * Cancels this call whether it is queued or in flight.
+   *
+   * Stop used to be observable only BETWEEN steps, because the turn's
+   * AbortSignal stopped at the orchestrator and never reached the model client.
+   * Pressing Stop during a long execution decision therefore did nothing until
+   * that call returned on its own. Every model call in the turn now carries the
+   * turn's signal.
+   */
+  signal?: AbortSignal;
   /** Internal audit callback. The route is stripped before AgentOutput reaches
    * the browser, so provider identity never becomes user-facing content. */
   onRoute?: (route: "hosted" | "gemini") => void;
@@ -43,7 +53,14 @@ export interface ModelOptions {
  * This lowers worst-case latency and request spend. It does not add any calls
  * on the healthy path (one request per decision remains one request).
  */
-export const CALL_RELIABILITY: Record<CallType, { timeoutMs: number; maxAttempts: number }> = {
+/**
+ * `deadlineMs` is optional here on purpose. The model client derives a safe
+ * wall-clock budget from `timeoutMs * maxAttempts` plus slack for every call,
+ * so a call type that names no deadline is still bounded — and a call type
+ * added later cannot accidentally become unbounded. Name one only to be
+ * stricter than that default. See `callDeadlineMs` in internal-client.
+ */
+export const CALL_RELIABILITY: Record<CallType, { timeoutMs: number; maxAttempts: number; deadlineMs?: number }> = {
   classification: { timeoutMs: 15_000, maxAttempts: 1 },
   direct_answer: { timeoutMs: 20_000, maxAttempts: 1 },
   plan: { timeoutMs: 45_000, maxAttempts: 2 },
@@ -242,6 +259,8 @@ export const modelGateway = {
       label: callType,
       timeoutMs: reliability.timeoutMs,
       maxAttempts: reliability.maxAttempts,
+      deadlineMs: reliability.deadlineMs,
+      signal: opts.signal,
       onRoute: opts.onRoute,
       onFallback: opts.onFallback,
       onUsage: usageSink(opts, messages),
@@ -282,6 +301,8 @@ export const modelGateway = {
       label: callType,
       timeoutMs: reliability.timeoutMs,
       maxAttempts: reliability.maxAttempts,
+      deadlineMs: reliability.deadlineMs,
+      signal: opts.signal,
       onRoute: opts.onRoute,
       onFallback: opts.onFallback,
       onUsage: usageSink(opts, messages),
@@ -310,20 +331,8 @@ function sanitizeAgentTurn(turn: AgentTurn): AgentTurn {
     ...turn,
     thought: sanitize(turn.thought),
     summary: turn.summary ? sanitize(turn.summary) : undefined,
-    action_input: sanitizeObject(turn.action_input) as Record<string, unknown>,
+    // write_file content reaches the disk byte-exact; sanitizeToolInput keeps
+    // every other field scrubbed without touching the code body.
+    action_input: sanitizeToolInput(turn.action, turn.action_input),
   };
-}
-
-function sanitizeObject(obj: unknown): unknown {
-  if (obj === null || obj === undefined) return obj;
-  if (typeof obj === "string") return sanitize(obj);
-  if (Array.isArray(obj)) return obj.map(sanitizeObject);
-  if (typeof obj === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(obj)) {
-      out[key] = sanitizeObject(value);
-    }
-    return out;
-  }
-  return obj;
 }

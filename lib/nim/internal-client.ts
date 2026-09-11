@@ -4,6 +4,7 @@ import { estimateCallTokens } from "./rate-governor";
 import { createCircuitBreaker } from "./circuit-breaker";
 import { createKeyPool, providerKeysFromEnv, type KeyLease } from "./key-pool";
 import { currentByokProvider, type ByokProviderConfig } from "./byok-context";
+import { currentTurnSignal } from "@/lib/agent/turn-control";
 import { perf } from "@/lib/agent/perf";
 
 export type NimMessage = {
@@ -70,6 +71,22 @@ export type CompletionOptions = {
   timeoutMs?: number;
   /** Total dispatch attempts, including the first one. */
   maxAttempts?: number;
+  /**
+   * ABSOLUTE wall-clock budget for the whole call, measured from enqueue.
+   *
+   * `timeoutMs` bounds a single in-flight request and nothing else. It does not
+   * bound time spent queued behind a cooled key, provider-directed `retry-after`
+   * backoff (deliberately uncapped — see `retryDelayMs`), or route-fallback hops
+   * that each restart the per-attempt budget. Those gaps are what allowed a call
+   * declaring 30s to stay pending for minutes: the recurring Step 3 stall.
+   *
+   * This is the one budget a caller can rely on. When it expires the call
+   * rejects with a real, user-actionable error instead of holding the turn.
+   */
+  deadlineMs?: number;
+  /** Cancels the call whether it is queued or already in flight. Without this,
+   *  Stop could only be observed between steps, never during a model call. */
+  signal?: AbortSignal;
   /** Internal route selected by the checkpointed provider fallback chain. */
   route?: "hosted" | "gemini";
   onRoute?: (route: "hosted" | "gemini") => void;
@@ -97,9 +114,30 @@ type QueueTask = {
   /** Captured at enqueue time so queued work cannot lose the request-scoped
    * provider context when it is dispatched later. */
   byok?: ByokProviderConfig;
+  /** Absolute time this call must be settled by, one way or the other. */
+  expiresAt: number;
+  /** Aborts the CURRENT in-flight attempt, if there is one. Re-pointed on each
+   *  dispatch so a deadline or a user Stop reaches the live request. */
+  abortInFlight?: () => void;
+  /** Guards against a task being settled twice — e.g. the deadline firing at the
+   *  same moment a slow response lands. */
+  settled: boolean;
+  /** Clears the deadline timer and removes the caller's abort listener. */
+  cleanup?: () => void;
   resolve: (value: unknown) => void;
   reject: (reason?: unknown) => void;
 };
+
+/** Settle a task exactly once, clearing its deadline and detaching listeners. */
+function settleTask(task: QueueTask, outcome: { ok: true; value: unknown } | { ok: false; error: unknown }): void {
+  if (task.settled) return;
+  task.settled = true;
+  const index = queue.indexOf(task);
+  if (index >= 0) queue.splice(index, 1);
+  task.cleanup?.();
+  if (outcome.ok) task.resolve(outcome.value);
+  else task.reject(outcome.error);
+}
 
 function preferredRoute(opts: CompletionOptions): QueueTask["route"] {
   const label = opts.label ?? "";
@@ -149,18 +187,75 @@ const keyPool = (globalStore.__trionKeyPool ??= createKeyPool(providerKeysFromEn
  * pool from the hosted Trion pool: keys are rotated for availability, never
  * assigned to a model tier, and never exposed in telemetry. */
 function geminiKeysFromEnv(env: Record<string, string | undefined> = process.env) {
-  const values = [env.GEMINI_API_KEY_1, env.GEMINI_API_KEY_2, env.GEMINI_API_KEY_3, env.GEMINI_API_KEY]
-    .map((value) => value?.trim())
-    .filter((value): value is string => Boolean(value));
-  const unique = [...new Set(values)];
+  // Key identity is SLOT-based, not positional.
+  //
+  // These ids are addressed by role elsewhere (`pump` prefers `gemini-1` for
+  // planning and `gemini-2` for execution/review), so they must mean the same
+  // credential every time. The previous version numbered keys by their position
+  // AFTER filtering and de-duplication, which meant an unset `GEMINI_API_KEY_1`
+  // silently promoted `GEMINI_API_KEY_2` to `gemini-1` — so the credential the
+  // operator designated for execution was doing the planning, and the execution
+  // role's preferred key did not exist at all. Nothing reported this, because a
+  // missing preferred key falls back silently and correctly.
   const rpm = Number(env.GEMINI_RPM_LIMIT ?? 10);
   const tpm = Number(env.GEMINI_TPM_LIMIT ?? 0);
-  return unique.slice(0, 3).map((secret, index) => ({
-    id: `gemini-${index + 1}`,
-    secret,
-    rpm: Number.isFinite(rpm) && rpm >= 0 ? rpm : 10,
-    tpm: Number.isFinite(tpm) && tpm >= 0 ? tpm : 0,
-  }));
+  const slots: Array<string | undefined> = [env.GEMINI_API_KEY_1, env.GEMINI_API_KEY_2, env.GEMINI_API_KEY_3]
+    .map((value) => value?.trim() || undefined);
+
+  // The unnumbered variable is a single-key convenience. Give it the first slot
+  // that is still free rather than a slot of its own, so a one-key deployment
+  // is `gemini-1` and never leaves a hole ahead of itself.
+  const unnumbered = env.GEMINI_API_KEY?.trim();
+  if (unnumbered && !slots.includes(unnumbered)) {
+    const free = slots.findIndex((value) => value === undefined);
+    if (free >= 0) slots[free] = unnumbered;
+  }
+
+  // Two variables holding the SAME secret are one credential with one quota,
+  // not two. Collapse duplicates onto their earliest slot so the pool never
+  // believes it has headroom it does not have.
+  const seen = new Set<string>();
+  return slots
+    .map((secret, index) => ({ secret, id: `gemini-${index + 1}` }))
+    .filter((entry): entry is { secret: string; id: string } => {
+      if (!entry.secret || seen.has(entry.secret)) return false;
+      seen.add(entry.secret);
+      return true;
+    })
+    .map((entry) => ({
+      id: entry.id,
+      secret: entry.secret,
+      rpm: Number.isFinite(rpm) && rpm >= 0 ? rpm : 10,
+      tpm: Number.isFinite(tpm) && tpm >= 0 ? tpm : 0,
+    }));
+}
+
+/**
+ * Whether the build lane actually has the topology it is configured to assume.
+ *
+ * Planning and execution are routed to different credentials so a long build
+ * does not spend one key's whole per-minute allowance on its own decisions. When
+ * both roles resolve to the same credential that separation is imaginary: every
+ * plan, execution decision and review call queues against a single RPM budget,
+ * which is a direct cause of slow, serialized Step 3 execution.
+ *
+ * This is reported rather than corrected — the fix is a second credential, which
+ * is an operator decision. Surfacing it means it can no longer be invisible.
+ */
+export function geminiLaneDiagnostics(env: Record<string, string | undefined> = process.env) {
+  const keys = geminiKeysFromEnv(env);
+  const ids = new Set(keys.map((key) => key.id));
+  const planKey = ids.has("gemini-1") ? "gemini-1" : keys[0]?.id;
+  const executionKey = ids.has("gemini-2") ? "gemini-2" : keys[0]?.id;
+  return {
+    configured: keys.length > 0,
+    distinctKeys: keys.length,
+    planKey,
+    executionKey,
+    /** True when plan and execution contend for one credential's rate budget. */
+    sharesOneCredential: keys.length > 0 && planKey === executionKey,
+    rpmPerKey: keys[0]?.rpm ?? 0,
+  };
 }
 
 const geminiPool = (globalStore.__trionGeminiPool ??= createKeyPool(geminiKeysFromEnv(), { independentBilling: true }));
@@ -222,7 +317,12 @@ const configuredRpm = Number(process.env.TRION_RPM_LIMIT ?? 40);
 const intervalOverride = process.env.TRION_MIN_INTERVAL_MS ?? process.env.NIM_MIN_INTERVAL_MS;
 const requestedIntervalMs = intervalOverride === undefined ? 0 : Math.max(0, Number(intervalOverride) || 0);
 const MIN_INTERVAL_MS = requestedIntervalMs > 0 ? requestedIntervalMs : defaultDispatchIntervalMs(configuredRpm);
-const REQUEST_TIMEOUT_MS = Number(process.env.TRION_REQUEST_TIMEOUT_MS || process.env.NIM_REQUEST_TIMEOUT_MS || 120000);
+// Transport ceiling for a single provider attempt. 180s matches the Step-3
+// full-file authoring budget: a lower hosted cap used to truncate healthy
+// authoring responses at 120s while Gemini honored the full 180s, so the same
+// logical call had a 60s divergent budget by route. Per-call timeoutMs values
+// still govern ordinary calls; this is only the maximum they may request.
+const REQUEST_TIMEOUT_MS = Number(process.env.TRION_REQUEST_TIMEOUT_MS || process.env.NIM_REQUEST_TIMEOUT_MS || 180000);
 const DEFAULT_MAX_ATTEMPTS = 5;
 /** A quota response is not a malformed request. Keep the same queued turn
  * alive through a small number of provider-paced cooldowns so the user does
@@ -249,11 +349,25 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Highest-priority task whose `notBefore` has passed. Does not dequeue. */
-function peekReady(now: number): QueueTask | null {
+/**
+ * Highest-priority task whose `notBefore` has passed. Does not dequeue.
+ *
+ * `blocked` holds tasks this pass already proved undispatchable — their route's
+ * pool has no key with headroom right now. Skipping them lets the pump fall
+ * through to work that CAN run instead of returning.
+ *
+ * That fall-through is the point. Previously the pump returned as soon as its
+ * single best candidate could not get a key, so one cooled build-route key
+ * froze every unrelated hosted call in the queue — including the
+ * classification that gates the user's first visible feedback — for the whole
+ * cooldown. Priority is meant to order work, never to let a stalled task hold
+ * a slot no one else may use.
+ */
+function peekReady(now: number, blocked?: Set<QueueTask>): QueueTask | null {
   let best: QueueTask | null = null;
   for (const task of queue) {
     if (task.notBefore > now) continue;
+    if (blocked?.has(task)) continue;
     if (!best || task.priority < best.priority || (task.priority === best.priority && task.seq < best.seq)) {
       best = task;
     }
@@ -299,18 +413,41 @@ async function pump(): Promise<void> {
   if (pumping) return;
   pumping = true;
 
+  // Tasks proved undispatchable on this pass (their route has no key with
+  // headroom right now). Cleared whenever anything is actually dispatched,
+  // because a completed call frees budget that may unblock them.
+  const blocked = new Set<QueueTask>();
+  /** Soonest moment a blocked task might become dispatchable. */
+  let blockedWakeAt: number | null = null;
+  const noteBlocked = (task: QueueTask, waitMs: number) => {
+    blocked.add(task);
+    const at = Date.now() + Math.max(1, waitMs);
+    blockedWakeAt = blockedWakeAt === null ? at : Math.min(blockedWakeAt, at);
+  };
+
   try {
     for (;;) {
       if (queue.length === 0) return;
       if (inFlight >= MAX_CONCURRENCY) return;
 
       const now = Date.now();
-      const task = peekReady(now);
+      const task = peekReady(now, blocked);
 
       if (!task) {
+        // Nothing dispatchable. Wake for whichever comes first: a task whose
+        // retry delay expires, or a blocked task whose key budget recovers.
         const wake = nextWakeAt(now);
-        if (wake !== null) scheduleWake(wake);
+        const at = wake === null ? blockedWakeAt : blockedWakeAt === null ? wake : Math.min(wake, blockedWakeAt);
+        if (at !== null) scheduleWake(at);
         return;
+      }
+
+      // A task can be settled by its deadline or by Stop while it sits in the
+      // queue. Drop it here rather than spending a request on a dead call.
+      if (task.settled) {
+        const index = queue.indexOf(task);
+        if (index >= 0) queue.splice(index, 1);
+        continue;
       }
 
       // Reject while the breaker is open BEFORE consulting or charging the
@@ -319,8 +456,7 @@ async function pump(): Promise<void> {
       // delays the first healthy request after recovery.
       const breaker = task.byok ? null : task.route === "gemini" ? geminiCircuitBreaker : hostedCircuitBreaker;
       if (breaker?.isOpen()) {
-        queue.splice(queue.indexOf(task), 1);
-        task.reject(new Error("Trion is briefly pausing requests after repeated upstream failures. Try again in a moment."));
+        settleTask(task, { ok: false, error: new Error("Trion is briefly pausing requests after repeated upstream failures. Try again in a moment.") });
         continue;
       }
 
@@ -335,8 +471,34 @@ async function pump(): Promise<void> {
         const preferredGeminiKey = task.opts.label === "plan" ? "gemini-1" : "gemini-2";
         const choice = geminiPool.pick(task.estTokens, preferredGeminiKey);
         if (!choice.keyId || choice.waitMs > 0) {
-          scheduleWake(Date.now() + Math.max(1, choice.waitMs));
-          return;
+          // The build lane cannot serve this call right now.
+          //
+          // Waiting out a cooled route while a healthy alternative sits idle is
+          // never the right trade: the wait buys nothing the fallback would not
+          // deliver sooner. This matters far more than it looks, because the
+          // build lane's real free-tier limit is a DAILY request quota — once it
+          // is spent, every remaining call in the day finds the pool cooling and
+          // would queue behind a 60s cooldown that resets on each attempt. That
+          // is the recurring Step 3 stall, and it is why the switch is immediate
+          // rather than conditional on the remaining budget.
+          //
+          // The route order still means the build lane is always TRIED first
+          // while it has capacity; this only decides what to do once it does not.
+          const alternative = fallbackRoute(task);
+          const waitIsPointless = choice.waitMs > MIN_USEFUL_ATTEMPT_MS ||
+            Date.now() + choice.waitMs > task.expiresAt - MIN_USEFUL_ATTEMPT_MS;
+          if (alternative && waitIsPointless) {
+            perf("provider.fallback", 0, { from: task.route, to: alternative, reason: "route_unavailable_alternative_ready", waitMs: choice.waitMs });
+            task.opts.onFallback?.(task.route, alternative);
+            task.route = alternative;
+            task.opts.route = alternative;
+            task.fallbackHops += 1;
+            continue;
+          }
+          // Otherwise do not stop the whole pump for one cooled build key: mark
+          // this task blocked and let hosted work behind it proceed.
+          noteBlocked(task, choice.waitMs);
+          continue;
         }
         lease = geminiPool.acquire(choice.keyId, task.estTokens);
         if (!lease) continue;
@@ -344,14 +506,13 @@ async function pump(): Promise<void> {
         // Select the least-loaded credential independently from the requested
         // model tier. The shared governor still protects one shared allowance.
         if (keyPool.isEmpty()) {
-          queue.splice(queue.indexOf(task), 1);
-          task.reject(new Error("No AI provider is configured."));
+          settleTask(task, { ok: false, error: new Error("No AI provider is configured.") });
           continue;
         }
         const choice = keyPool.pick(task.estTokens);
         if (!choice.keyId || choice.waitMs > 0) {
-          scheduleWake(Date.now() + Math.max(1, choice.waitMs));
-          return;
+          noteBlocked(task, choice.waitMs);
+          continue;
         }
         if (MIN_INTERVAL_MS > 0) {
           const previousDispatch = independentBilling
@@ -372,6 +533,11 @@ async function pump(): Promise<void> {
       inFlight += 1;
       if (usingGemini) geminiInFlight += 1;
       else if (!usingByok) hostedInFlight += 1;
+      // Something moved. A task blocked earlier in this pass may have been
+      // waiting on budget that this dispatch is about to release, so give every
+      // blocked task a fresh look rather than carrying a stale verdict forward.
+      blocked.clear();
+      blockedWakeAt = null;
 
       void dispatch(task, lease, usingByok, usingGemini).finally(() => {
         inFlight -= 1;
@@ -388,25 +554,74 @@ async function pump(): Promise<void> {
 /** Run exactly one attempt. Success resolves the caller; a retryable failure
  *  re-queues the task with a delay instead of blocking this slot. */
 async function dispatch(task: QueueTask, lease: KeyLease | null, usingByok: boolean, usingGemini: boolean): Promise<void> {
+  // The deadline or a user Stop can settle a task between selection and
+  // dispatch. Spending a provider request on an already-settled call is pure
+  // waste against the rate ceiling and its result has nowhere to go.
+  if (task.settled) {
+    if (lease) (usingGemini ? geminiPool : keyPool).settleFailure(lease);
+    return;
+  }
   task.opts.onRoute?.(task.route);
   const breaker = usingByok ? null : usingGemini ? geminiCircuitBreaker : hostedCircuitBreaker;
   if (breaker?.isOpen()) {
     if (lease) (usingGemini ? geminiPool : keyPool).settleFailure(lease);
-    task.reject(new Error("Trion is briefly pausing requests after repeated upstream failures. Try again in a moment."));
+    settleTask(task, { ok: false, error: new Error("Trion is briefly pausing requests after repeated upstream failures. Try again in a moment.") });
     return;
   }
 
+  // Never let one attempt run past the whole call's remaining budget. Without
+  // this, a 180s authoring attempt started near the deadline would keep the
+  // socket open long after the caller had already been told the call failed.
+  const remaining = task.expiresAt - Date.now();
+  const attemptOpts: CompletionOptions = {
+    ...task.opts,
+    timeoutMs: Math.max(1_000, Math.min(task.opts.timeoutMs ?? REQUEST_TIMEOUT_MS, remaining)),
+  };
+
   try {
-    const text = await callProviderText(task.messages, task.maxTokens, task.opts, lease?.secret, task.byok, (usage) => {
+    const text = await callProviderText(task.messages, task.maxTokens, attemptOpts, lease?.secret, task.byok, (usage) => {
       // Correct this key's pessimistic pre-flight estimate with what it was
       // actually billed. Concurrent responses settle against their own lease.
       if (lease) (usingGemini ? geminiPool : keyPool).settleSuccess(lease, usage.promptTokens + usage.completionTokens);
-    });
+    }, (abort) => { task.abortInFlight = abort; });
     breaker?.breakSequence();
-    task.resolve(task.parse ? parseAgentTurn(text) : text);
+    settleTask(task, { ok: true, value: task.parse ? parseAgentTurn(text) : text });
   } catch (error) {
+    if (task.settled) return;
     await settleFailure(task, error, lease, usingByok, usingGemini);
+  } finally {
+    task.abortInFlight = undefined;
   }
+}
+
+/**
+ * Put a task back on the queue for another attempt — but only if that attempt
+ * could actually finish inside the call's remaining budget.
+ *
+ * Re-queuing a task whose `notBefore` already sits past its deadline is the
+ * shape of the stall this module used to produce: the work is technically
+ * "still being retried" while no attempt can ever run in time, and the caller
+ * waits with no error and no result. Failing here converts that dead wait into
+ * an immediate, accurate message the turn can act on.
+ *
+ * Returns false when the task was settled instead of re-queued.
+ */
+function requeue(task: QueueTask, reason: string): boolean {
+  if (task.settled) return false;
+  const now = Date.now();
+  if (task.notBefore >= task.expiresAt) {
+    perf("provider.deadlineExceeded", 0, { reason, waitMs: task.notBefore - now, label: task.opts.label ?? "" });
+    settleTask(task, {
+      ok: false,
+      error: new Error(
+        "Trion is at its shared model-request limit and the wait exceeds this request's budget. Please retry in about a minute."
+      ),
+    });
+    return false;
+  }
+  queue.push(task);
+  void pump();
+  return true;
 }
 
 async function settleFailure(task: QueueTask, error: unknown, lease: KeyLease | null, usingByok: boolean, usingGemini: boolean): Promise<void> {
@@ -442,16 +657,28 @@ async function settleFailure(task: QueueTask, error: unknown, lease: KeyLease | 
     task.opts.onFallback?.(previousRoute, nextRoute);
     perf("provider.fallback", 0, { from: previousRoute, to: nextRoute, attempt: task.attempt, reason: status ?? "timeout_or_transport" });
     task.attempt += 1;
-    task.notBefore = rateLimited ? Date.now() + retryAfterMs : Date.now();
-    queue.push(task);
-    void pump();
+    // Do NOT inherit the exhausted route's cooldown.
+    //
+    // This line used to read `rateLimited ? Date.now() + retryAfterMs : ...`,
+    // which meant a call that had just failed over to a DIFFERENT, healthy
+    // provider still sat out the cooldown the ORIGINAL provider asked for. With
+    // a two-minute `retry-after` from the build route, the hosted route was
+    // available and answering the whole time and the turn stalled anyway. That
+    // is the recurring Step 3 stall: the fallback fired correctly and was then
+    // neutralised by a backoff that did not apply to it.
+    //
+    // A different route has its own pool, its own governor and its own limits,
+    // so it is eligible immediately. `keyPool.pick` still enforces whatever the
+    // NEW route's real budget is before anything is dispatched.
+    task.notBefore = Date.now();
+    if (!requeue(task, "provider fallback")) return;
     return;
   }
 
   if (rateLimited) {
     // One cooled key must not take healthy independent keys down with it.
     if (!usingByok && (usingGemini || keyPool.healthyCount() === 0) && breaker?.noteRateLimit()) {
-      task.reject(new Error("Trion is briefly pausing requests after repeated upstream rate limits. Try again in a moment."));
+      settleTask(task, { ok: false, error: new Error("Trion is briefly pausing requests after repeated upstream rate limits. Try again in a moment.") });
       return;
     }
   } else {
@@ -466,7 +693,7 @@ async function settleFailure(task: QueueTask, error: unknown, lease: KeyLease | 
   // after a real limit response and never before the pool cooldown expires.
   const allowedAttempts = rateLimited ? Math.max(task.maxAttempts, RATE_LIMIT_MAX_ATTEMPTS) : task.maxAttempts;
   if (!isRetryable(error) || task.attempt >= allowedAttempts) {
-    task.reject(new Error(describeError(error)));
+    settleTask(task, { ok: false, error: new Error(describeError(error)) });
     return;
   }
 
@@ -479,9 +706,10 @@ async function settleFailure(task: QueueTask, error: unknown, lease: KeyLease | 
   const canFailOver = lease !== null && !rateLimited && status === 503 && activePool.hasAlternative(lease.keyId, task.estTokens);
   task.notBefore = canFailOver ? Date.now() : Date.now() + retryAfterMs;
   // Re-queued at its original priority: a call that has already burned an
-  // attempt is MORE urgent than one that has not, not less.
-  queue.push(task);
-  void pump();
+  // attempt is MORE urgent than one that has not, not less. `requeue` refuses
+  // the retry outright when the provider's own backoff would push it past this
+  // call's deadline, rather than parking the caller on a wait it cannot use.
+  requeue(task, rateLimited ? "rate limit backoff" : "transport retry");
 }
 
 /**
@@ -581,9 +809,45 @@ export function isProviderRateLimited(error: { status?: number; body?: string; m
     text.includes("too many requests");
 }
 
+/**
+ * Absolute ceiling on any single model call, however it is configured.
+ *
+ * A caller can ask for less. Nothing may ask for more: an interactive turn that
+ * has been "working" for four minutes on one decision has already failed the
+ * user, whatever the provider is doing.
+ */
+const MAX_CALL_DEADLINE_MS = Math.max(30_000, Number(process.env.TRION_CALL_DEADLINE_MAX_MS || 240_000));
+
+/**
+ * Slack added on top of `timeoutMs * maxAttempts` when a caller does not name an
+ * explicit deadline. It covers the legitimate non-request time in a healthy
+ * call: queue wait under a rate ceiling, one route-fallback hop, and provider
+ * backoff between attempts. It is deliberately generous — the deadline exists to
+ * kill unbounded waits, not to fail slow-but-progressing work.
+ */
+const DEADLINE_SLACK_MS = Math.max(0, Number(process.env.TRION_CALL_DEADLINE_SLACK_MS || 45_000));
+
+/**
+ * The least remaining budget in which a fresh attempt is still worth starting.
+ * Below this, waiting for a cooled route to recover cannot produce an answer in
+ * time, so the pump switches routes instead of queueing against the cooldown.
+ */
+const MIN_USEFUL_ATTEMPT_MS = Math.max(1_000, Number(process.env.TRION_MIN_USEFUL_ATTEMPT_MS || 5_000));
+
+export function callDeadlineMs(opts: CompletionOptions): number {
+  const attempts = Math.max(1, opts.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
+  const perAttempt = Math.max(1_000, opts.timeoutMs ?? REQUEST_TIMEOUT_MS);
+  const derived = perAttempt * attempts + DEADLINE_SLACK_MS;
+  return Math.min(opts.deadlineMs ?? derived, MAX_CALL_DEADLINE_MS);
+}
+
 function enqueue(messages: NimMessage[], maxTokens: number, opts: CompletionOptions, parse: boolean) {
   return new Promise<unknown>((resolve, reject) => {
-    queue.push({
+    const deadlineMs = callDeadlineMs(opts);
+    // An explicit signal wins; otherwise inherit the active turn's. This is what
+    // makes Stop reach calls whose call sites never asked to be cancellable.
+    const signal = opts.signal ?? currentTurnSignal();
+    const task: QueueTask = {
       messages,
       maxTokens,
       opts,
@@ -597,9 +861,47 @@ function enqueue(messages: NimMessage[], maxTokens: number, opts: CompletionOpti
       route: opts.route ?? preferredRoute(opts),
       fallbackHops: 0,
       byok: currentByokProvider(),
+      expiresAt: Date.now() + deadlineMs,
+      settled: false,
       resolve,
       reject,
-    });
+    };
+
+    // The deadline is armed HERE, at enqueue, not at dispatch. A task that never
+    // reaches a provider — because every key is cooling, or because the pump
+    // never selected it — is exactly the case the old per-request timeout could
+    // not see, and exactly how the turn used to hang with nothing in flight.
+    const deadlineTimer = setTimeout(() => {
+      perf("provider.deadlineExceeded", deadlineMs, { reason: "wall clock", label: opts.label ?? "", route: task.route });
+      task.abortInFlight?.();
+      settleTask(task, {
+        ok: false,
+        error: new Error("Trion could not complete this step in time. Retry, and it will resume from the saved workspace state."),
+      });
+    }, deadlineMs);
+    (deadlineTimer as unknown as { unref?: () => void }).unref?.();
+
+    // Stop must reach a call that is queued behind a cooled key just as surely
+    // as one that is already in flight.
+    const onAbort = () => {
+      task.abortInFlight?.();
+      const cancelled = new Error("Turn cancelled by the user.");
+      cancelled.name = "AbortError";
+      settleTask(task, { ok: false, error: cancelled });
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+
+    task.cleanup = () => {
+      clearTimeout(deadlineTimer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+
+    queue.push(task);
     void pump();
   });
 }
@@ -625,9 +927,18 @@ export function getCircuitState() {
 export function getRateSnapshot() {
   const geminiQueued = queue.filter((task) => task.route === "gemini").length;
   const hostedQueued = queue.length - geminiQueued;
+  const lane = geminiLaneDiagnostics();
   const routes = {
     hosted: { queued: hostedQueued, inFlight: hostedInFlight },
-    geminiBuild: { configured: geminiConfigured(), queued: geminiQueued, inFlight: geminiInFlight },
+    geminiBuild: {
+      configured: lane.configured,
+      queued: geminiQueued,
+      inFlight: geminiInFlight,
+      // Operational health, not credentials: how many DISTINCT keys the lane
+      // resolved to, and whether planning and execution are sharing one budget.
+      distinctKeys: lane.distinctKeys,
+      sharesOneCredential: lane.sharesOneCredential,
+    },
   };
   return { ...keyPool.snapshot(), queued: queue.length, inFlight, routes };
 }
@@ -642,7 +953,10 @@ async function callProviderText(
   opts: CompletionOptions,
   providerKey: string | undefined,
   byok: ByokProviderConfig | undefined,
-  onSettle?: (usage: CompletionUsage) => void
+  onSettle?: (usage: CompletionUsage) => void,
+  /** Hands the caller a way to abort THIS request, so a wall-clock deadline or a
+   *  user Stop can close the socket instead of waiting for the response. */
+  registerAbort?: (abort: () => void) => void
 ): Promise<string> {
   const fast = opts.fast ?? false;
   const temperature = opts.temperature ?? 0.15;
@@ -664,11 +978,17 @@ async function callProviderText(
   }
 
   const controller = new AbortController();
+  // Step-3 full-file authoring has an explicit 180s ceiling. Gemini used to
+  // impose an undocumented 60s transport cap here, which silently overrode
+  // that bounded policy and made a healthy long JSON response look like a
+  // stalled execution. Ordinary plan/decision calls still use their smaller
+  // `opts.timeoutMs` budgets below; this is only the maximum they may request.
   const routeTimeout = useGemini
-      ? Number(process.env.TRION_GEMINI_REQUEST_TIMEOUT_MS || 60_000)
+      ? Number(process.env.TRION_GEMINI_REQUEST_TIMEOUT_MS || 180_000)
       : REQUEST_TIMEOUT_MS;
   const timeoutMs = Math.max(1_000, Math.min(opts.timeoutMs ?? REQUEST_TIMEOUT_MS, routeTimeout));
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  registerAbort?.(() => controller.abort());
   const started = Date.now();
 
   try {

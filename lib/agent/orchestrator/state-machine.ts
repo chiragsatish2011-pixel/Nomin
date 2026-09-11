@@ -38,7 +38,7 @@ import {
   resolveOpenQuestions,
   type TaskState,
 } from "../task-state";
-import { awaitPlanApproval } from "../execution/bridge";
+import { awaitPlanApproval, hashPlan } from "../execution/bridge";
 import { planNeedsApproval } from "../approval";
 import { sanitize as sanitizeError } from "../sanitize";
 import { buildClarificationOutput, toClarificationQuestion } from "../clarification";
@@ -48,6 +48,7 @@ import { evaluateVerification } from "../verification";
 import { reviewCodingCompletion, shouldRunCodingReview } from "../quality-chain";
 import { perf } from "../perf";
 import { withLedgerSession } from "../token-ledger";
+import { withTurnSignal } from "../turn-control";
 import { completeProgress, pausedProgress, planProgress } from "../progress-updates";
 import type { ByokProviderConfig } from "@/lib/nim/byok-context";
 
@@ -237,7 +238,15 @@ export async function runTurn(
 ): Promise<AgentOutput> {
   // Every model call this turn makes lands in this session's token ledger,
   // whichever stage spends it. Measurement only — see token-ledger.ts.
-  return withLedgerSession(request.sessionId, () => runTurnInner(request, emit, t0, signal));
+  //
+  // `withTurnSignal` is the counterpart that is NOT measurement: it makes the
+  // turn's cancellation ambient, so Stop reaches every model call this turn
+  // issues — classification, planning, execution decisions, synthesis and the
+  // review roles alike — instead of only the handful that were passed a signal
+  // by hand. See turn-control.ts.
+  return withTurnSignal(signal, () =>
+    withLedgerSession(request.sessionId, () => runTurnInner(request, emit, t0, signal))
+  );
 }
 
 async function runTurnInner(
@@ -508,8 +517,12 @@ async function runTurnInner(
 
     if (approvalDecision.required) {
       timingLog("T2_approval_start", t0);
-      emit({ type: "plan_approval", plan: toPlan(ctx.plan), reason: approvalDecision.reason });
-      const approval = await awaitPlanApproval(request.sessionId);
+      // The gate is bound to THIS plan's bytes: the client echoes planHash
+      // with its decision, so a stale approval for an older plan cannot
+      // release this gate.
+      const planHash = hashPlan(ctx.plan);
+      emit({ type: "plan_approval", plan: toPlan(ctx.plan), reason: approvalDecision.reason, planHash });
+      const approval = await awaitPlanApproval(request.sessionId, { planHash });
       throwIfTurnCancelled(signal);
       timingLog("T2_approval_done", t0, { approval });
   
@@ -614,7 +627,7 @@ async function runTurnInner(
       return failureOutput;
     }
 
-    if (verification.required && verification.status !== "passed") {
+    if (verification.required && verification.status !== "passed" && verification.status !== "started") {
       return pauseForVerification(ctx, taskState, verification, ctx.input.user_message, emit);
     }
 
@@ -794,7 +807,10 @@ async function resumeApprovedExecution(
     return output;
   }
 
-  if (verification.required && verification.status !== "passed") {
+  // "started" (dev server live, no build/test proof) is honest final evidence,
+  // not a reason to pause: the preview is the deliverable and the message says
+  // exactly what was and was not validated.
+  if (verification.required && verification.status !== "passed" && verification.status !== "started") {
     return pauseForVerification(ctx, taskState, verification, pending.originalUserText, emit);
   }
 

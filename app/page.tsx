@@ -30,11 +30,10 @@ import { TraceTree, type TraceNode } from "@/app/components/TraceTree";
 import { WorkPanel, type LiveFile } from "@/app/components/WorkPanel";
 import { ArtifactPanel } from "@/app/components/ArtifactPanel";
 import { AccountMenu } from "@/app/components/AccountMenu";
-import { useAuth } from "@/app/components/AuthProvider";
-import { deleteCloudSession, loadCloudSessions, saveCloudSession } from "@/app/lib/cloud-sessions";
 import { useWebContainerExecutor } from "@/app/hooks/useWebContainerExecutor";
 import type { AgentMode, AgentModel, Plan } from "@/lib/agent/types";
 import { ACTIVITY_LABELS, toAgentStatus } from "@/lib/agent/types";
+import { MAX_SAVED_SESSION_BYTES, MAX_TOTAL_SAVED_SESSION_BYTES } from "@/app/lib/storage-hygiene";
 import { type AgentOutput, type LegacyAgentOutput, type AgentStreamEvent, parseAgentStreamEvent } from "@/lib/agent/protocol";
 
 const PIPELINE_STATUSES = new Set(["thinking", "planning", "executing", "synthesizing", "done", "error", "cancelled"]);
@@ -180,9 +179,10 @@ const SESSION_INDEX_KEY = "trion-sessions";
 const SESSION_TURNS_PREFIX = "trion-session:";
 const ACTIVE_SESSION_KEY = "trion-active-session";
 const MAX_SAVED_SESSIONS = 40;
+/** Saved chat checkpoints are recovery aids, never an unbounded local archive. */
 
-/** Account-owned browser state stays unavailable until auth hydration ends. */
-let activeSessionScope = "pending";
+/** Every installation is local-first. No account or remote-sync boundary exists. */
+const activeSessionScope = "local";
 
 function scopedStorageKey(key: string): string {
   return `${key}:${encodeURIComponent(activeSessionScope)}`;
@@ -194,7 +194,6 @@ function scopedTurnKey(id: string): string {
 
 function readSessionIndex(): SessionEntry[] {
   try {
-    if (!activeSessionScope.startsWith("user:")) return [];
     const raw = localStorage.getItem(scopedStorageKey(SESSION_INDEX_KEY));
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
@@ -242,36 +241,43 @@ function sessionServerSnapshot(): SessionEntry[] {
 function commitSessions(next: SessionEntry[]) {
   sessionCache = next;
   try {
-    if (activeSessionScope.startsWith("user:")) {
-      localStorage.setItem(scopedStorageKey(SESSION_INDEX_KEY), JSON.stringify(next));
-    }
+    localStorage.setItem(scopedStorageKey(SESSION_INDEX_KEY), JSON.stringify(next));
   } catch {
     // Quota or private mode — the list is still correct for this session.
   }
   for (const listener of sessionListeners) listener();
 }
 
-function switchSessionScope(scope: string) {
-  if (!scope || scope === activeSessionScope) return;
-  activeSessionScope = scope;
-  sessionCache = null;
-  for (const listener of sessionListeners) listener();
-}
-
 /** Record (or refresh) one conversation and its visible work checkpoint. */
 function saveSession(id: string, saved: SavedSession) {
-  // Signed-out conversations are intentionally ephemeral. This prevents a
-  // later account from inheriting history created by another browser user.
-  if (!activeSessionScope.startsWith("user:")) return;
   const firstUserTurn = saved.turns.find((turn) => turn.role === "user");
   if (!firstUserTurn) return;
 
   const current = sessionSnapshot();
   const entry: SessionEntry = { id, title: sessionTitleFrom(firstUserTurn.content), updatedAt: Date.now() };
-  const next = [entry, ...current.filter((item) => item.id !== id)].slice(0, MAX_SAVED_SESSIONS);
+  let next = [entry, ...current.filter((item) => item.id !== id)].slice(0, MAX_SAVED_SESSIONS);
+  const encoded = boundedSessionEncoding(saved);
 
   try {
-    localStorage.setItem(scopedTurnKey(id), JSON.stringify(saved));
+    // Refuse to leave a stale oversized checkpoint behind. The active page
+    // still works; only durable recovery is skipped until its visible state is
+    // small enough to fit the documented retention ceiling.
+    if (!encoded) {
+      localStorage.removeItem(scopedTurnKey(id));
+      commitSessions(next.filter((item) => item.id !== id));
+      return;
+    }
+    localStorage.setItem(scopedTurnKey(id), encoded);
+    // Enforce a total browser-storage budget by evicting the oldest saved
+    // conversations first. Never evict the session being written.
+    let total = savedSessionBytes(next);
+    while (total > MAX_TOTAL_SAVED_SESSION_BYTES && next.length > 1) {
+      const stale = next.at(-1);
+      if (!stale || stale.id === id) break;
+      localStorage.removeItem(scopedTurnKey(stale.id));
+      next = next.slice(0, -1);
+      total = savedSessionBytes(next);
+    }
     // Drop transcripts that fell off the end of the index, so a long-lived
     // browser profile does not accumulate orphaned conversations forever.
     for (const stale of current) {
@@ -284,17 +290,45 @@ function saveSession(id: string, saved: SavedSession) {
   }
 
   commitSessions(next);
-  void saveCloudSession({ id, title: entry.title, updatedAt: entry.updatedAt, checkpoint: saved }).catch(() => undefined);
+}
+
+/** Make a bounded durable copy without changing the live conversation. Large
+ * artifacts and long traces remain available during the current session, but
+ * a reopened session restores the newest useful evidence instead of filling
+ * localStorage indefinitely. */
+function boundedSessionEncoding(saved: SavedSession): string | null {
+  const bounded: SavedSession = {
+    ...saved,
+    turns: saved.turns.slice(-80),
+    traceNodes: saved.traceNodes.slice(-160),
+    liveFiles: saved.liveFiles.slice(-12),
+    progressUpdates: saved.progressUpdates.slice(-40),
+  };
+  try {
+    const encoded = JSON.stringify(bounded);
+    return encoded.length <= MAX_SAVED_SESSION_BYTES ? encoded : null;
+  } catch {
+    return null;
+  }
+}
+
+function savedSessionBytes(entries: SessionEntry[]): number {
+  return entries.reduce((total, entry) => {
+    try {
+      return total + (localStorage.getItem(scopedTurnKey(entry.id))?.length ?? 0);
+    } catch {
+      return total;
+    }
+  }, 0);
 }
 
 function forgetSession(id: string) {
   try {
-    if (activeSessionScope.startsWith("user:")) localStorage.removeItem(scopedTurnKey(id));
+    localStorage.removeItem(scopedTurnKey(id));
   } catch {
     // Nothing to do.
   }
   commitSessions(sessionSnapshot().filter((entry) => entry.id !== id));
-  void deleteCloudSession(id).catch(() => undefined);
 }
 
 function emptySavedSession(): SavedSession {
@@ -313,7 +347,6 @@ function emptySavedSession(): SavedSession {
 
 function readSavedSession(id: string): SavedSession {
   try {
-    if (!activeSessionScope.startsWith("user:")) return emptySavedSession();
     const raw = localStorage.getItem(scopedTurnKey(id));
     if (!raw) return emptySavedSession();
     const parsed: unknown = JSON.parse(raw);
@@ -371,16 +404,6 @@ function presentError(message: string): string {
 function resizeComposer(textarea: HTMLTextAreaElement) {
   textarea.style.height = "auto";
   textarea.style.height = `${Math.min(textarea.scrollHeight, 220)}px`;
-}
-
-/**
- * The account gate intentionally lives in the browser, before fetch. It is a
- * conservative cost-control decision, not a second intent classifier: simple
- * conversation stays instant, while work that can consume planning/building
- * capacity asks the person to sign in before a provider request is created.
- */
-function requiresAccountForRequest(text: string): boolean {
-  return /\b(?:build|create|make|implement|develop|code|debug|fix|refactor|redesign|design|website|web\s*app|landing\s*page|dashboard|component|api|project|repository|codebase|architecture|deep(?:ly)?\s+(?:analy[sz]e|reason|research)|research\s+(?:and|the|this)|compare\s+(?:the|these)|plan\s+(?:a|the)|review\s+(?:my|this)\s+code)\b/i.test(text);
 }
 
 /** A workspace build needs a real browser snapshot; ordinary conversation
@@ -444,7 +467,6 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [allowanceDismissed, setAllowanceDismissed] = useState(false);
-  const [signInGateRequest, setSignInGateRequest] = useState<string | null>(null);
   // Match BootIntro's first render. This avoids kicking off landing animations
   // behind the opaque intro before the boot overlay has released the page.
   const [introActive, setIntroActive] = useState(true);
@@ -459,6 +481,9 @@ export default function Home() {
   /** Messages typed while a turn was running. The ref is the authority (handlers
    *  close over stale state); the array mirrors it for rendering. */
   const queueRef = useRef<string[]>([]);
+  // Identity of the plan currently awaiting approval. Echoed with the
+  // decision so the server can reject a stale approval for a superseded plan.
+  const approvalHashRef = useRef<string | null>(null);
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
   /** Files written this conversation, shown live in the side panel. */
   const [liveFiles, setLiveFiles] = useState<LiveFile[]>([]);
@@ -493,13 +518,9 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelMenuRef = useRef<HTMLDivElement | null>(null);
   const executor = useWebContainerExecutor();
-  const switchExecutorScope = executor.switchScope;
   const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
   const sessionHydratedRef = useRef(false);
   const sessions = useSyncExternalStore(subscribeSessions, sessionSnapshot, sessionServerSnapshot);
-  const { user, loading: authLoading } = useAuth();
-  const identityScope = authLoading ? "pending" : user ? `user:${user.uid}` : "anonymous";
-  const identityScopeRef = useRef("pending");
 
   function restoreSavedSession(saved: SavedSession) {
     setTurns(saved.turns);
@@ -518,24 +539,6 @@ export default function Home() {
     setCurrentTurnSeq(lastUserId);
   }
 
-  // Swap every account-owned browser surface as one boundary. The old user's
-  // checkpoint stays under their UID; the incoming identity starts with no
-  // inherited transcript or workspace while its own records hydrate.
-  useEffect(() => {
-    if (identityScope === identityScopeRef.current) return;
-    identityScopeRef.current = identityScope;
-    switchSessionScope(identityScope);
-    activeRequestRef.current += 1;
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setBusy(false);
-    setLanding(true);
-    setSessionId(crypto.randomUUID());
-    restoreSavedSession(emptySavedSession());
-    workspaceSnapshotRef.current = [];
-    void switchExecutorScope(identityScope);
-  }, [identityScope, switchExecutorScope]);
-
   // A refresh opens a fresh visible conversation. Saved conversations remain
   // in the sidebar, but automatically restoring the active one made reloads
   // feel like reopening a stuck task rather than arriving at a ready composer.
@@ -545,35 +548,11 @@ export default function Home() {
       sessionHydratedRef.current = true;
     }
     try {
-      if (activeSessionScope.startsWith("user:")) {
-        localStorage.setItem(scopedStorageKey(ACTIVE_SESSION_KEY), sessionId);
-      }
+      localStorage.setItem(scopedStorageKey(ACTIVE_SESSION_KEY), sessionId);
     } catch {
       // The active conversation is still usable for this page lifetime.
     }
   }, [sessionId]);
-
-  // Firestore is the signed-in cross-device copy; localStorage remains the
-  // immediate/offline cache. Hydration is additive and newest-wins so signing
-  // in never erases a newer conversation already present in this browser.
-  useEffect(() => {
-    if (!user || identityScope !== `user:${user.uid}`) return;
-    let disposed = false;
-    void loadCloudSessions().then((remote) => {
-      if (disposed || !remote.length) return;
-      const local = sessionSnapshot();
-      const merged = new Map(local.map((entry) => [entry.id, entry]));
-      for (const entry of remote) {
-        const current = merged.get(entry.id);
-        if (!current || entry.updatedAt > current.updatedAt) {
-          merged.set(entry.id, { id: entry.id, title: entry.title, updatedAt: entry.updatedAt });
-          try { localStorage.setItem(scopedTurnKey(entry.id), JSON.stringify(entry.checkpoint)); } catch { /* offline cache is best-effort */ }
-        }
-      }
-      commitSessions([...merged.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_SAVED_SESSIONS));
-    }).catch(() => undefined);
-    return () => { disposed = true; };
-  }, [identityScope, user]);
 
   /** Persist the transcript and visible task checkpoint. Server-side task state
    * remains authoritative for retries; this gives a reopened thread its work
@@ -726,12 +705,12 @@ export default function Home() {
     setAgentOutput(null);
     setPanelOpen(false);
     setError(null);
-    setSignInGateRequest(null);
     setPhase("Ready");
     setAgentState("complete");
     setBusy(false);
     setApprovalPending(false);
     setApprovalPlan(null);
+    approvalHashRef.current = null;
     setRejectPrompt(false);
     setTraceCollapsed(false);
     setAttachedFiles([]);
@@ -812,10 +791,6 @@ export default function Home() {
   function beginFromLanding() {
     const submitted = message.trim();
     if (!submitted) return;
-    if (!authLoading && !user && requiresAccountForRequest(submitted)) {
-      setSignInGateRequest(submitted);
-      return;
-    }
     setLanding(false);
     void submitMessage();
   }
@@ -830,10 +805,15 @@ export default function Home() {
       body: JSON.stringify({ sessionId }),
     }).catch(() => undefined);
     // Stopping a turn stops the AGENT, not the workspace. The files it already
-    // wrote and any running dev server stay exactly as they are.
+    // wrote and any running dev server stay exactly as they are. Anything the
+    // user queued is dropped too: firing a stale follow-up after an explicit
+    // Stop is never what was asked for.
     setBusy(false);
     setApprovalPending(false);
     setApprovalPlan(null);
+    approvalHashRef.current = null;
+    queueRef.current = [];
+    setQueuedMessages([]);
     setPhase("Stopped");
     setAgentState("complete");
     setTraceNodes((current) => settleNodes(current, "cancelled"));
@@ -843,13 +823,15 @@ export default function Home() {
   /** Answer the plan-approval gate (Step 1.5). The server is blocked until
    *  this POST lands — nothing executes while the gate is open. */
   async function postApproval(decision: "approve" | "cancel") {
+    const planHash = approvalHashRef.current;
+    approvalHashRef.current = null;
     setApprovalPending(false);
     setApprovalPlan(null);
     try {
       await fetch("/api/trion/approval", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sessionId, decision }),
+        body: JSON.stringify({ sessionId, decision, ...(planHash ? { planHash } : {}) }),
       });
     } catch {
       // If the POST never lands the server-side gate times out into "cancel".
@@ -954,14 +936,6 @@ export default function Home() {
     // A decision is open. Nothing may be sent past it — that is the whole point
     // of the gate being modal.
     if (gateOpen) return;
-
-    // This must happen before queueing, WebContainer preparation, or fetch.
-    // A signed-out build is not a partially started build; it has zero model
-    // requests and zero workspace mutations until the person signs in.
-    if (!authLoading && !user && requiresAccountForRequest(submitted)) {
-      setSignInGateRequest(submitted);
-      return;
-    }
 
     // QUEUE rather than drop.
     //
@@ -1278,6 +1252,7 @@ export default function Home() {
 
     if (event.type === "plan_approval") {
       setApprovalPlan(event.plan);
+      approvalHashRef.current = event.planHash;
       setApprovalReason(event.reason ?? "");
       setGateChoice(null);
       setApprovalPending(true);
@@ -1536,16 +1511,6 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
           <div><a href="/connections">Connect your own model</a><button type="button" onClick={() => setAllowanceDismissed(true)}>Not now</button></div>
         </div>
       </section> : null}
-      {signInGateRequest ? <section className="allowanceModal signInGateModal" role="dialog" aria-modal="true" aria-labelledby="sign-in-gate-title">
-        <div className="allowanceCard signInGateCard">
-          <JellyfishMark size={48} title="Nomin" />
-          <p>Save your work</p>
-          <h2 id="sign-in-gate-title">Sign in before starting this build.</h2>
-          <span>Your request has not been sent yet. Signing in lets Trion keep the conversation and any project work with your account, so you can safely return to it later.</span>
-          <div><a href={`/login?next=${encodeURIComponent("/")}`}>Sign in to continue</a><button type="button" onClick={() => setSignInGateRequest(null)}>Not now</button></div>
-        </div>
-      </section> : null}
-
       {landing ? (
         <section className={`landingPage${sidebarCollapsed ? " sidebarCollapsed" : " withLandingSidebar"}`}>
           <aside className={`landingSidebar${sidebarCollapsed ? " collapsed" : ""}`} aria-label="Conversations">
@@ -1554,9 +1519,9 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
               <button type="button" onClick={() => { setSidebarCollapsed(true); localStorage.setItem("nomin-sidebar-collapsed", "1"); }} title="Collapse sidebar" aria-label="Collapse sidebar"><PanelLeftClose size={17} /></button>
             </div>
             <button className="newThreadButton" type="button" onClick={newThread}><Plus size={17} /><span>New thread</span></button>
-            {user ? <nav className="primaryNav landingPrimaryNav" aria-label="Settings and status">
+            <nav className="primaryNav landingPrimaryNav" aria-label="Settings and status">
               <a className="primaryNavItem" href="/connections"><Plug size={17} /><span>Connections</span></a>
-            </nav> : null}
+            </nav>
             <section className="sideModule historyModule">
               <p className="sideLabel">Conversations</p>
               {sessions.length === 0 ? <p className="historyEmpty">No conversations yet. Start one here.</p> : (
@@ -1571,10 +1536,10 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
           </aside>
           {sidebarCollapsed ? <button className="landingSidebarReveal" type="button" onClick={() => { setSidebarCollapsed(false); localStorage.setItem("nomin-sidebar-collapsed", "0"); }} title="Open conversations" aria-label="Open conversations"><PanelLeftOpen size={18} /></button> : null}
           <div className="landingThemeSlot">
-            {user ? <a className="capacityChip compact" href="/capacity" title="View context and provider capacity">
+            <a className="capacityChip compact" href="/capacity" title="View context and provider capacity">
               <Gauge size={15} />
               <span>{capacity?.context ?? "Capacity"}</span>
-            </a> : null}
+            </a>
             <ThemeToggle />
             <AccountMenu />
           </div>
@@ -1625,7 +1590,7 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
                   </button>
                 </div>
                 <div className="rightComposerTools">
-                  {user ? <a className="composerModelTag" href="/connections" title="Choose a model connection">{activeConnection ? safeConnectionLabel(activeConnection) : `Trion ${MODEL_LABELS[model]}`}</a> : <span className="composerModelTag">{`Trion ${MODEL_LABELS[model]}`}</span>}
+                  <a className="composerModelTag" href="/connections" title="Choose a model connection">{activeConnection ? safeConnectionLabel(activeConnection) : `Trion ${MODEL_LABELS[model]}`}</a>
                   <button
                     className="sendOrb"
                     type="button"
@@ -1703,10 +1668,10 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
             <FileText size={17} />
             <span>Artifacts</span>
           </button>
-          {user ? <a className="primaryNavItem" href="/connections">
+          <a className="primaryNavItem" href="/connections">
             <Plug size={17} />
             <span>Connections</span>
-          </a> : null}
+          </a>
         </nav>
 
         {/* Conversations, not shortcuts. The old "Write / Code / Test / Deploy"
@@ -1759,7 +1724,7 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
             </div>
           </div>
           <div className="topBarActions">
-            {user ? <a
+            <a
               className={`capacityChip ${busy && capacity?.activity.building ? "building" : busy && capacity?.activity.planning ? "planning" : ""}`}
               href="/capacity"
               title={
@@ -1773,7 +1738,7 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
               <Gauge size={14} />
               <span className="capacityChipContext">Context <strong>{capacity?.context ?? "Checking"}</strong></span>
               <span className="capacityChipLimit">{capacityLabel(capacity)}</span>
-            </a> : null}
+            </a>
             <span
               className={`sandboxChip ${
                 executor.bootError ? "error" : executor.previewUrl ? "live" : executor.booting ? "busy" : ""
@@ -2191,12 +2156,12 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
                 <div className="modelMenu" ref={modelMenuRef}>
                   <button className="modelTrigger" type="button" aria-haspopup="menu" aria-expanded={modelMenuOpen} onClick={() => setModelMenuOpen((open) => !open)} title="Choose model"><Sparkles size={14} /><span>{activeConnection ? safeConnectionLabel(activeConnection) : `Trion ${MODEL_LABELS[model]}`}</span><ChevronDown size={13} /></button>
                   <div className={`modelPopover${modelMenuOpen ? " open" : ""}`} role="menu" aria-label="Trion model tiers" aria-hidden={!modelMenuOpen}>
-                    {user && activeConnection ? <a className="modelConnectionActive" href="/connections"><span><strong>Connected model</strong><small>{activeConnection.model}</small></span><Check size={14} /></a> : null}
+                    {activeConnection ? <a className="modelConnectionActive" href="/connections"><span><strong>Connected model</strong><small>{activeConnection.model}</small></span><Check size={14} /></a> : null}
                     {MODEL_TIERS.map((tier) => {
                       const available = availableModels.includes(tier);
                       return <button className={`modelOption${model === tier ? " active" : ""}${!available ? " unavailable" : ""}`} disabled={!available} key={tier} role="menuitem" type="button" tabIndex={modelMenuOpen ? 0 : -1} onClick={() => { setModel(tier); setModelMenuOpen(false); }}><span><strong>Trion {MODEL_LABELS[tier]}</strong><small>{available ? "Available in this build" : "Provider route not configured"}</small></span>{model === tier ? <Check size={14} /> : null}</button>;
                     })}
-                    {user ? <a className="modelConnectionLink" href="/connections">Connect or manage your own model</a> : null}
+                    <a className="modelConnectionLink" href="/connections">Connect or manage your own model</a>
                   </div>
                 </div>
                 {busy ? (

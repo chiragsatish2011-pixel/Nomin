@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sanitize, sanitizeObject, sanitizeTraceEntry, sanitizeArtifact, assertNoLeaks, assertNoLeaksInObject } from "../sanitize";
+import { sanitize, sanitizeObject, sanitizeToolInput, sanitizeTraceEntry, sanitizeArtifact, assertNoLeaks, assertNoLeaksInObject, assertNoLeaksInOutput } from "../sanitize";
 
 const LEAK_STRINGS = [
   "I am Nemotron 3 Ultra",
@@ -114,10 +114,37 @@ describe("sanitizeTraceEntry", () => {
     expect(output.step_id).toBe(1);
     expect(output.attempt).toBe(1);
   });
+
+  it("keeps write_file content byte-exact so the trace matches the disk", () => {
+    const code = "import { GoogleGenerativeAI } from '@google/generative-ai'; // Gemini client";
+    const output = sanitizeTraceEntry({
+      step_id: 1,
+      tool_name: "write_file",
+      input: { path: "a.ts", content: code },
+      output: "written",
+      status: "success" as const,
+      attempt: 1,
+    });
+    expect(output.input.content).toBe(code);
+    expect(output.input.path).toBe("a.ts");
+  });
+});
+
+describe("sanitizeToolInput", () => {
+  it("scrubs every field except a write_file code body", () => {
+    const out = sanitizeToolInput("write_file", { path: "NIM/a.ts", content: "NIM client" });
+    expect(out.path).toBe("Trion/a.ts");
+    expect(out.content).toBe("NIM client");
+  });
+
+  it("scrubs non-write inputs fully", () => {
+    const out = sanitizeToolInput("read_file", { path: "NIM/a.ts" });
+    expect(out.path).toBe("Trion/a.ts");
+  });
 });
 
 describe("sanitizeArtifact", () => {
-  it("sanitizes artifact content and metadata", () => {
+  it("sanitizes artifact metadata but keeps code content byte-exact", () => {
     const artifact = {
       type: "file" as const,
       language: "typescript",
@@ -125,7 +152,9 @@ describe("sanitizeArtifact", () => {
       preview_url: "https://nvidia.com/preview",
     };
     const output = sanitizeArtifact(artifact);
-    expect(output.content).toBe("const model = 'Trion'");
+    // Content is the deliverable: replacing substrings inside it corrupts the
+    // product, so it passes through untouched.
+    expect(output.content).toBe("const model = 'nvidia/nemotron-3-ultra'");
     expect(output.language).toBe("typescript");
     expect(output.preview_url).toBe("https://Nomin.com/preview"); // nvidia -> Nomin
   });
@@ -135,6 +164,15 @@ describe("assertNoLeaks", () => {
   it("throws on leak strings", () => {
     for (const leak of LEAK_STRINGS) {
       expect(() => assertNoLeaks(leak, "test")).toThrow(`Identity leak in test`);
+    }
+  });
+
+  it("never echoes vendor strings in its own error", () => {
+    try {
+      assertNoLeaks("nvidia/nemotron-3-ultra-550b-a55b", "test");
+      expect.unreachable();
+    } catch (error) {
+      expect((error as Error).message).not.toMatch(/nvidia|nemotron/i);
     }
   });
 
@@ -244,14 +282,36 @@ describe("full pipeline sanitization", () => {
       next_action_hint: rawOutput.next_action_hint ? sanitize(rawOutput.next_action_hint) : null,
     };
 
-    // Assert no leaks in final output
-    const json = JSON.stringify(sanitizedOutput);
-    expect(json).not.toMatch(/Nemotron|NIM|nvidia\/nemotron/i);
+    // Assert no leaks in model-authored prose (code bodies are exempt by design)
+    expect(sanitizedOutput.message).not.toMatch(/Nemotron|NIM|nvidia\/nemotron/i);
+    expect(JSON.stringify(sanitizedOutput.tool_trace[0].input.path)).not.toMatch(/Nemotron|NIM|nvidia\/nemotron/i);
+    expect(sanitizedOutput.next_action_hint ?? "").not.toMatch(/Nemotron|NIM|nvidia\/nemotron/i);
     
     // Verify positive content
     expect(sanitizedOutput.message).toBe("Trion completed the task");
     expect(sanitizedOutput.tool_trace[0].input.path).toBe("Trion/file.ts");
-    expect(sanitizedOutput.artifacts[0].content).toBe("Model: Trion");
+    // Code bodies are byte-exact by design (see sanitizeArtifact).
+    expect(sanitizedOutput.artifacts[0].content).toBe("Model: nvidia/nemotron-3-ultra");
     expect(sanitizedOutput.next_action_hint).toBe("Check Trion logs");
+  });
+});
+
+describe("assertNoLeaksInOutput", () => {
+  const base = {
+    message: "Done",
+    plan: null,
+    tool_trace: [],
+    artifacts: [],
+    next_action_hint: null,
+  } as const;
+
+  it("allows vendor names inside code bodies but not in prose", () => {
+    const ok = {
+      ...base,
+      tool_trace: [{ tool_name: "write_file", input: { path: "a.ts", content: "NIM client" }, output: "ok" }],
+      artifacts: [{ content: "nvidia/nemotron-3-ultra" }],
+    };
+    expect(() => assertNoLeaksInOutput(ok as never)).not.toThrow();
+    expect(() => assertNoLeaksInOutput({ ...base, message: "NIM did it" } as never)).toThrow("Identity leak");
   });
 });

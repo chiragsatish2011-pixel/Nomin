@@ -96,6 +96,11 @@ describe("plan parsing repairs instead of failing the turn", () => {
     expect(plan.steps[0].tool).toBeNull();
   });
 
+  it("coerces a finish plan tool to a non-tool step instead of a terminator", () => {
+    const plan = parsePlanDoc(JSON.stringify({ plan_summary: "x", steps: [{ step_id: 1, description: "a", tool: "finish" }] }));
+    expect(plan.steps[0].tool).toBeNull();
+  });
+
   it("recovers a plan wrapped in prose and a markdown fence", () => {
     const raw = 'Sure! Here is the plan:\n```json\n{"plan_summary":"s","steps":[{"step_id":1,"description":"d","tool":"read_file"}]}\n```';
     expect(parsePlanDoc(raw).steps).toHaveLength(1);

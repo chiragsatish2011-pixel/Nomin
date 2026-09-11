@@ -6,7 +6,7 @@ import { Gauge, MessageSquareText, PanelLeftClose, PanelLeftOpen, Plug } from "l
 import { JellyfishMark } from "@/app/components/JellyfishMark";
 import { ThemeToggle } from "@/app/components/ThemeToggle";
 import { AccountMenu } from "@/app/components/AccountMenu";
-import { AccountRouteGuard } from "@/app/components/AccountRouteGuard";
+import { measureStorage, STORAGE_MONITOR_INTERVAL_MS, storageHealthDetail, storageHealthLabel, type StorageHealth } from "@/app/lib/storage-hygiene";
 
 type Capacity = {
   ready: boolean;
@@ -20,6 +20,7 @@ type Capacity = {
 
 function CapacityPageContent() {
   const [data, setData] = useState<Capacity | null>(null);
+  const [storage, setStorage] = useState<StorageHealth | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window === "undefined") return true;
     const saved = window.localStorage.getItem("nomin-sidebar-collapsed");
@@ -40,6 +41,15 @@ function CapacityPageContent() {
 
   useEffect(() => {
     void fetch("/api/trion/capacity").then((response) => response.ok ? response.json() : null).then(setData).catch(() => setData(null));
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => {
+      try { setStorage(measureStorage(window.localStorage)); } catch { setStorage(null); }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, STORAGE_MONITOR_INTERVAL_MS);
+    return () => window.clearInterval(timer);
   }, []);
 
   return (
@@ -72,13 +82,14 @@ function CapacityPageContent() {
             <article><p>This week</p><strong>{data?.week ?? "Checking"}</strong><small>Observed Trion activity</small></article>
             <article><p>Context room</p><strong>{data?.context ?? "Checking"}</strong><small>Shown without exposing token counts</small></article>
             <article><p>Request availability</p><strong>{requestAvailability}</strong><small>Live request capacity</small></article>
+            <article><p>Local storage</p><strong>{storageHealthLabel(storage)}</strong><small>{storageHealthDetail(storage)}</small></article>
           </section>
           <section className="capacityNote">
             <p>Allowance</p>
             <strong>{data?.allowance ?? "Loading allowance…"}</strong>
             <span>{data?.activity.building ? "Trion is building and reviewing project changes." : data?.activity.planning ? "Trion is planning your request." : "Trion is ready for a new request."}</span>
           </section>
-          <p className="capacityPersistence">Conversation history is cached in this browser and synchronized to your account when signed in. The in-browser project workspace and observed activity counters may reset after the local server or browser workspace restarts.</p>
+          <p className="capacityPersistence">Conversation history is stored in this browser. The in-browser project workspace and observed activity counters may reset after the local server or browser workspace restarts.</p>
         </div>
       </section>
     </main>
@@ -86,5 +97,5 @@ function CapacityPageContent() {
 }
 
 export default function CapacityPage() {
-  return <AccountRouteGuard><CapacityPageContent /></AccountRouteGuard>;
+  return <CapacityPageContent />;
 }

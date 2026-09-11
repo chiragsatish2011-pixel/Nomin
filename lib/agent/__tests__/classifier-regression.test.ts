@@ -39,6 +39,7 @@ const cases = [
   ["wt?", "needs_clarification"],
   ["what should we do next?", "needs_clarification"],
   ["can you create something?", "needs_clarification"],
+  ["could you build literally anything cool?", "needs_clarification"],
   ["build a landing page", "task"],
   ["can you make a dashboard?", "task"],
   ["please fix the login bug", "task"],

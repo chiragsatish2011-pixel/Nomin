@@ -10,9 +10,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const emitted = [];
 const ctx = { sessionId: "s1", stepId: 4, emit: (event) => emitted.push(event) };
+// Mock browser results carry the awaiting step id (ctx.stepId = 4): since the
+// bridge binds executions to their step, a result for any other step is
+// discarded instead of entering the trace.
+const { awaitClientExecutionMock } = vi.hoisted(() => ({
+  awaitClientExecutionMock: vi.fn(async () => ({ ok: true, output: "done", status: "success", step_id: 4 })),
+}));
 
 vi.mock("../execution/bridge", () => ({
-  awaitClientExecution: vi.fn(async () => ({ ok: true, output: "done", status: "success", step_id: 0 })),
+  awaitClientExecution: awaitClientExecutionMock,
 }));
 
 const { runTool } = await import("../tool-runner");
@@ -23,9 +29,23 @@ function turn(action, action_input) {
 
 beforeEach(() => {
   emitted.length = 0;
+  awaitClientExecutionMock.mockClear();
+  awaitClientExecutionMock.mockResolvedValue({ ok: true, output: "done", status: "success", step_id: 4 });
 });
 
 describe("run_command", () => {
+  it("registers the browser result listener before announcing the tool call", async () => {
+    awaitClientExecutionMock.mockImplementationOnce(async () => {
+      expect(emitted).toHaveLength(0);
+      return { ok: true, output: "done", status: "success", step_id: 4 };
+    });
+
+    await runTool(turn("run_command", { command: "npm install" }), ctx);
+
+    expect(awaitClientExecutionMock).toHaveBeenCalledOnce();
+    expect(emitted).toHaveLength(1);
+  });
+
   it("accepts a command with no cwd (the workspace root)", async () => {
     const result = await runTool(turn("run_command", { command: "npm install" }), ctx);
     expect(result.ok).toBe(true);

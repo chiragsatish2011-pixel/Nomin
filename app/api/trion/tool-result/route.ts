@@ -8,8 +8,12 @@ type ToolResultRequest = {
   result?: ToolResult;
 };
 
-/** The client WebContainer executor posts tool results here. The server
- *  resolves the pending execution and the Step 3 loop continues. */
+/** The client WebContainer executor posts tool results here. Shape validation,
+ *  step binding, replay protection (one-shot pending entries), and expiry all
+ *  live in the bridge: this route only checks the envelope and reports whether
+ *  a pending execution consumed the payload. A malformed payload for a KNOWN
+ *  execution still returns ok:true — the bridge already failed that step fast
+ *  with a precise error, so re-posting the same bytes cannot help. */
 export async function POST(request: Request) {
   let body: ToolResultRequest;
   try {
@@ -20,17 +24,12 @@ export async function POST(request: Request) {
 
   const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
   const executionId = typeof body.executionId === "string" ? body.executionId : "";
-  const result = body.result;
 
   if (!sessionId || !executionId) {
     return NextResponse.json({ error: "sessionId and executionId are required." }, { status: 400 });
   }
 
-  if (!result || typeof result.ok !== "boolean" || typeof result.output !== "string") {
-    return NextResponse.json({ error: "Invalid tool result payload." }, { status: 400 });
-  }
-
-  const resolved = resolveClientExecution(sessionId, executionId, result);
+  const resolved = resolveClientExecution(sessionId, executionId, (body.result ?? {}) as ToolResult);
   if (!resolved) {
     return NextResponse.json({ error: "Unknown or expired execution id." }, { status: 404 });
   }

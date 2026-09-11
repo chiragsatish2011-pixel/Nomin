@@ -193,6 +193,10 @@ export async function executeSteps(
               fast: false,
               allowTruncated: /\.(?:css|scss|sass|less)$/i.test(directWritePath),
               reliability: authoringReliability,
+              // Full-file authoring is the longest call in the turn. Without the
+              // signal, Stop could not interrupt it at all — the user watched a
+              // cancelled turn keep working for up to three minutes.
+              signal,
               onRoute: (route) => { providerPath = route; },
               onFallback: notifyFallback,
             },
@@ -260,6 +264,7 @@ export async function executeSteps(
               thinking,
               fast: canUseFastTier(step, gate),
               reliability: authoringReliability,
+              signal,
               onRoute: (route) => { providerPath = route; },
               onFallback: notifyFallback,
             });
@@ -293,6 +298,7 @@ export async function executeSteps(
           thinking,
           fast: canUseFastTier(step, gate),
           reliability: authoringReliability,
+          signal,
           onRoute: (route) => { providerPath = route; },
           onFallback: notifyFallback,
         });
@@ -659,20 +665,33 @@ function collectDesignEvidence(trace: ToolTraceEntry[]): { targetPath: string; t
 }
 
 function isClientBridgeUnavailable(error: string | undefined): boolean {
-  return Boolean(error && /WebContainer bridge unavailable|Client disconnected before the WebContainer/i.test(error));
+  // Both the idle message ("bridge unavailable…45s") and the hard-ceiling
+  // message ("operation exceeded…180s") are unrecoverable within this turn:
+  // retrying them burns full model decisions plus full bridge waits.
+  return Boolean(error && /WebContainer bridge unavailable|WebContainer operation exceeded|Client disconnected before the WebContainer/i.test(error));
 }
 
 const VALID_ACTIONS = ["read_file", "write_file", "run_command", "search_codebase", "web_fetch", "finish"];
 
-function isValidAgentTurn(turn: AgentTurn): boolean {
-  return (
-    typeof turn.thought === "string" &&
-    typeof turn.action === "string" &&
-    VALID_ACTIONS.includes(turn.action) &&
-    typeof turn.done === "boolean" &&
-    typeof turn.action_input === "object" &&
-    turn.action_input !== null
-  );
+export function isValidAgentTurn(turn: AgentTurn): boolean {
+  if (
+    typeof turn.thought !== "string" ||
+    typeof turn.action !== "string" ||
+    !VALID_ACTIONS.includes(turn.action) ||
+    typeof turn.done !== "boolean" ||
+    typeof turn.action_input !== "object" ||
+    turn.action_input === null
+  ) {
+    return false;
+  }
+  // The advertised schema requires a summary whenever the turn claims to be
+  // done: without it the finish has no grounded result for the trace and the
+  // synthesis falls back to a generic "Turn completed." A missing summary is
+  // a precise, retryable schema error — not a reason to accept an empty finish.
+  if (turn.done === true && (typeof turn.summary !== "string" || turn.summary.trim().length === 0)) {
+    return false;
+  }
+  return true;
 }
 
 /** Say WHICH field was wrong. "Model returned invalid action schema" told the
@@ -684,6 +703,7 @@ function describeInvalidTurn(turn: AgentTurn): string {
     problems.push(`"action" must be one of: ${VALID_ACTIONS.join(", ")} (got ${JSON.stringify(turn.action)})`);
   }
   if (typeof turn.done !== "boolean") problems.push('"done" must be true or false');
+  if (turn.done === true && (typeof (turn as { summary?: unknown }).summary !== "string" || ((turn as { summary?: string }).summary as string).trim().length === 0)) problems.push('"summary" must be a non-empty string when "done" is true');
   if (typeof turn.action_input !== "object" || turn.action_input === null) problems.push('"action_input" must be a JSON object');
   return `Your response did not match the required schema: ${problems.join("; ")}. Respond with ONLY the JSON object.`;
 }

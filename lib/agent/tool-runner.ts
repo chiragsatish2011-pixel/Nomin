@@ -47,6 +47,15 @@ export async function runTool(turn: AgentTurn, ctx: RunToolContext): Promise<Too
   }
 
   const executionId = randomUUID();
+  // Register the bridge before exposing the id to the browser. The client can
+  // execute a small read and POST its result quickly; registering afterwards
+  // leaves a narrow race where a valid result is reported as unknown/expired.
+  // The expected step/action binds this execution server-side: a result for a
+  // different step fails fast instead of entering the trace.
+  const pendingResult = awaitClientExecution(ctx.sessionId, executionId, undefined, {
+    stepId: ctx.stepId,
+    action: turn.action,
+  });
 
   // Tell the client what to run — it owns the WebContainer.
   ctx.emit({
@@ -61,9 +70,14 @@ export async function runTool(turn: AgentTurn, ctx: RunToolContext): Promise<Too
   });
 
   try {
-    const result = await awaitClientExecution(ctx.sessionId, executionId);
+    const result = await pendingResult;
     if (!result || typeof result !== "object") {
       return { step_id: ctx.stepId, ok: false, status: "error", output: "", error: "WebContainer returned a malformed tool result." };
+    }
+    // Backstop for the bridge binding above: never re-label a result that
+    // belongs to another step as this step's success.
+    if (typeof (result as { step_id?: unknown }).step_id === "number" && (result as ToolResult).step_id !== ctx.stepId) {
+      return { step_id: ctx.stepId, ok: false, status: "error", output: "", error: `WebContainer returned a result for step ${(result as ToolResult).step_id}, but step ${ctx.stepId} was waiting. The stale result was discarded.` };
     }
     return {
       step_id: ctx.stepId,

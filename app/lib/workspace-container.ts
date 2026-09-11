@@ -20,6 +20,7 @@
 
 import type { FileSystemTree, WebContainer, WebContainerProcess } from "@webcontainer/api";
 import type { Artifact, ToolResult } from "@/lib/agent/types";
+import { isSensitiveWorkspacePath } from "@/lib/agent/path-policy";
 import { seedFileSystemTree } from "@/app/components/nx-seed";
 import { selectReadWindow } from "@/app/lib/read-window";
 
@@ -32,8 +33,10 @@ const IGNORED_DIRS = new Set(["node_modules", ".next", ".git", "dist", "build", 
 const CHECKPOINT_KEY_PREFIX = "trion.workspace.checkpoint.v1";
 const MAX_CHECKPOINT_BYTES = 900_000;
 
-/** Account-owned browser state is unavailable until auth hydration finishes. */
-let workspaceStorageScope = "pending";
+/** The open-source workspace is local-first. This scope is deliberately ready
+ * at module load so durable recovery does not depend on the removed auth
+ * hydration/scope-switch flow. */
+let workspaceStorageScope = "local";
 
 function checkpointKey(): string {
   return `${CHECKPOINT_KEY_PREFIX}:${encodeURIComponent(workspaceStorageScope)}`;
@@ -166,18 +169,28 @@ export function ensureDependencies(container: WebContainer): Promise<void> {
   if (installPromise) return installPromise;
 
   installPromise = (async () => {
-    const previous = state.status;
     emit({ status: "installing" });
     log("[trion] installing workspace dependencies…");
+    let failure: string | null = null;
     try {
       const install = await container.spawn("npm", ["install", "--no-audit", "--no-fund"]);
       pipe(install);
       const code = await install.exit;
-      log(code === 0 ? "[trion] dependencies installed" : `[trion] npm install exited with ${code}`);
+      if (code === 0) {
+        log("[trion] dependencies installed");
+      } else {
+        failure = `[trion] npm install exited with ${code}`;
+        log(failure);
+      }
     } catch (error) {
-      log(`[trion] npm install could not start: ${error instanceof Error ? error.message : "unknown error"}`);
+      failure = `[trion] npm install could not start: ${error instanceof Error ? error.message : "unknown error"}`;
+      log(failure);
     } finally {
-      emit({ status: previous === "error" ? "ready" : "ready" });
+      // A failed install must stay visible as an error: the old code emitted
+      // "ready" on both branches, so the UI showed a healthy workspace whose
+      // dependencies had never installed and the first command failed oddly.
+      if (failure) emit({ status: "error", error: failure });
+      else emit({ status: "ready" });
     }
   })();
 
@@ -346,6 +359,10 @@ async function search(container: WebContainer, input: Record<string, unknown>, s
     for (const filePath of files) {
       if (results.length >= maxResults) break;
       if (isProbablyBinary(filePath)) continue;
+      // Secret material (.env, private keys) is listed but never searched:
+      // read_file rejects these paths server-side, so allowing their contents
+      // through search would teach the model a bypass for the same bytes.
+      if (isSensitiveWorkspacePath(filePath)) continue;
       // Read ONCE. The previous implementation stat'ed each file by reading it
       // in full, then read it again to search — every file was loaded twice.
       const content = await container.fs.readFile(filePath, "utf-8").catch(() => "");
@@ -440,7 +457,6 @@ async function runCommand(container: WebContainer, input: Record<string, unknown
 function readCheckpoint(): WorkspaceCheckpoint | null {
   if (typeof window === "undefined") return null;
   try {
-    if (!workspaceStorageScope.startsWith("user:")) return null;
     const raw = window.localStorage.getItem(checkpointKey());
     if (!raw || raw.length > MAX_CHECKPOINT_BYTES) return null;
     const parsed = JSON.parse(raw) as Partial<WorkspaceCheckpoint>;
@@ -458,7 +474,6 @@ function readCheckpoint(): WorkspaceCheckpoint | null {
 
 function saveCheckpointFile(path: string, content: string): void {
   if (typeof window === "undefined") return;
-  if (!workspaceStorageScope.startsWith("user:")) return;
   const current = readCheckpoint() ?? { version: 1 as const, files: {} };
   const next: WorkspaceCheckpoint = { version: 1, files: { ...current.files, [path]: content } };
   try {

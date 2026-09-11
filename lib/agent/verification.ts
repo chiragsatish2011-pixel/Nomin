@@ -2,6 +2,10 @@ import type { ToolTraceEntry, VerificationSummary } from "./types";
 
 const RUNNABLE_FILE = /\.(?:[cm]?[jt]sx?|css|scss|sass|less|html?|vue|svelte|json)$/i;
 const VERIFICATION_COMMAND = /(?:\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|tests|build|lint|typecheck|type-check|check|validate|dev|start)\b|\bnpx\s+(?:vitest|jest|eslint|tsc)\b|\b(?:vitest|jest|eslint|tsc)\b|\b(?:next|vite)\s+(?:build|dev|preview)\b)/i;
+// A dev server beginning to serve proves the PROCESS started, not that the
+// change is correct. Only build/test/lint/typecheck-style checks prove
+// correctness; a bare start/preview/dev command is startup evidence.
+const STARTUP_ONLY_COMMAND = /^\s*(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start|preview)(?:\s|$)|\b(?:npx\s+)?(?:next|vite)\s+(?:dev|preview)(?:\s|$))/i;
 
 function writtenRunnableFile(entry: ToolTraceEntry): boolean {
   return entry.tool_name === "write_file" && entry.status === "success" &&
@@ -12,6 +16,10 @@ function commandFor(entry: ToolTraceEntry): string | null {
   return entry.tool_name === "run_command" && typeof entry.input.command === "string"
     ? entry.input.command.trim()
     : null;
+}
+
+function isStartupOnly(command: string | null | undefined): boolean {
+  return typeof command === "string" && STARTUP_ONLY_COMMAND.test(command);
 }
 
 /**
@@ -33,13 +41,28 @@ export function evaluateVerification(trace: ToolTraceEntry[]): VerificationSumma
     const command = commandFor(entry);
     return command !== null && VERIFICATION_COMMAND.test(command);
   });
-  const successful = checks.find((entry) => entry.status === "success");
+  // Prefer a correctness-proving check over a startup-only one: a turn that
+  // both started a dev server and ran a build is verified by the build.
+  const successful = checks.find((entry) => entry.status === "success" && !isStartupOnly(commandFor(entry)))
+    ?? checks.find((entry) => entry.status === "success");
   if (successful) {
+    const command = commandFor(successful) ?? undefined;
+    // A started dev server is live in preview, but startup is not proof: no
+    // build, test, or typecheck validated the change. Report it honestly
+    // instead of stamping the turn verified.
+    if (isStartupOnly(command)) {
+      return {
+        required: true,
+        status: "started",
+        command,
+        message: `Development server started (\`${command}\`): the app is live in preview, but no build, test, or typecheck validated the change.`,
+      };
+    }
     return {
       required: true,
       status: "passed",
-      command: commandFor(successful) ?? undefined,
-      message: `Verified by running \`${commandFor(successful)}\`.`,
+      command,
+      message: `Verified by running \`${command}\`.`,
     };
   }
 

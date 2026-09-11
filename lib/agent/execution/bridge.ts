@@ -38,6 +38,11 @@ type PendingExecution = {
   idleTimer: ReturnType<typeof setTimeout>;
   hardTimer: ReturnType<typeof setTimeout>;
   idleTimeoutMs: number;
+  /** Server-side expectation: the browser-supplied step id must match the step
+   *  that emitted this execution. The pending record — never the browser — is
+   *  authoritative for what this execution was. */
+  expectedStepId?: number;
+  expectedAction?: string;
 };
 
 // API route modules can be evaluated as separate bundles in Next development
@@ -57,11 +62,14 @@ function key(sessionId: string, executionId: string): string {
 }
 
 /** Register a pending execution and return the promise that resolves when the
- *  client posts the tool result. Rejects on timeout with a typed error. */
+ *  client posts the tool result. Rejects on timeout with a typed error.
+ *  `expected` binds the execution to the step/action that emitted it so a
+ *  misdelivered browser result fails fast instead of entering the trace. */
 export function awaitClientExecution(
   sessionId: string,
   executionId: string,
-  timeoutMs: number = CLIENT_EXECUTION_TIMEOUT_MS
+  timeoutMs: number = CLIENT_EXECUTION_TIMEOUT_MS,
+  expected?: { stepId: number; action: string }
 ): Promise<ToolResult> {
   const k = key(sessionId, executionId);
 
@@ -82,7 +90,15 @@ export function awaitClientExecution(
       pending.reject(new Error(`WebContainer operation exceeded ${Math.round(CLIENT_EXECUTION_MAX_MS / 1000)}s. Retry to continue from the saved workspace state.`));
     }, CLIENT_EXECUTION_MAX_MS);
 
-    pendingExecutions.set(k, { resolve, reject, idleTimer, hardTimer, idleTimeoutMs: timeoutMs });
+    pendingExecutions.set(k, {
+      resolve,
+      reject,
+      idleTimer,
+      hardTimer,
+      idleTimeoutMs: timeoutMs,
+      expectedStepId: expected?.stepId,
+      expectedAction: expected?.action,
+    });
   });
 }
 
@@ -103,17 +119,93 @@ export function touchClientExecution(sessionId: string, executionId: string): bo
   return true;
 }
 
+const VALID_RESULT_STATUSES = new Set(["success", "error"]);
+const VALID_ARTIFACT_TYPES = new Set(["code_diff", "file", "preview"]);
+
+/** Strict shape check for a browser-posted tool result. The server never
+ *  trusts a partial payload: an `ok:true` with a missing step, a wrong status
+ *  string, or a malformed artifact must fail the step loudly instead of
+ *  entering the execution trace as a success. */
+export function validateToolResultShape(result: unknown): { ok: true; result: ToolResult } | { ok: false; error: string } {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return { ok: false, error: "Tool result must be a JSON object." };
+  }
+  const candidate = result as Record<string, unknown>;
+  if (typeof candidate.step_id !== "number" || !Number.isInteger(candidate.step_id) || candidate.step_id < 1) {
+    return { ok: false, error: "Tool result step_id must be a positive integer." };
+  }
+  if (typeof candidate.ok !== "boolean") {
+    return { ok: false, error: "Tool result ok must be a boolean." };
+  }
+  if (typeof candidate.status !== "string" || !VALID_RESULT_STATUSES.has(candidate.status)) {
+    return { ok: false, error: 'Tool result status must be "success" or "error".' };
+  }
+  if ((candidate.ok && candidate.status !== "success") || (!candidate.ok && candidate.status !== "error")) {
+    return { ok: false, error: "Tool result ok and status disagree." };
+  }
+  if (typeof candidate.output !== "string") {
+    return { ok: false, error: "Tool result output must be a string." };
+  }
+  if (candidate.error !== undefined && typeof candidate.error !== "string") {
+    return { ok: false, error: "Tool result error must be a string." };
+  }
+  if (candidate.artifacts !== undefined) {
+    if (!Array.isArray(candidate.artifacts)) {
+      return { ok: false, error: "Tool result artifacts must be an array." };
+    }
+    for (const artifact of candidate.artifacts) {
+      if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) {
+        return { ok: false, error: "Tool result artifact must be an object." };
+      }
+      const entry = artifact as Record<string, unknown>;
+      if (typeof entry.type !== "string" || !VALID_ARTIFACT_TYPES.has(entry.type)) {
+        return { ok: false, error: "Tool result artifact has an unknown type." };
+      }
+      if (typeof entry.content !== "string") {
+        return { ok: false, error: "Tool result artifact content must be a string." };
+      }
+    }
+  }
+  return { ok: true, result: candidate as unknown as ToolResult };
+}
+
+/** Fail a pending execution with a precise error and release its timers.
+ *  Malformed or misdelivered results are deterministic: no retry of the same
+ *  payload can fix them, so the step retries immediately with a fresh
+ *  execution instead of waiting out the bridge timeout. Returns true so the
+ *  route stops the client from re-posting the same payload. */
+function consumeWithError(k: string, pending: PendingExecution, message: string): true {
+  clearTimeout(pending.idleTimer);
+  clearTimeout(pending.hardTimer);
+  pendingExecutions.delete(k);
+  pending.reject(new Error(message));
+  return true;
+}
+
 /** Resolve a pending execution from the client's tool-result POST. Returns
- *  true when a matching pending execution was found and resolved. */
+ *  true when a matching pending execution was found and consumed (resolved or
+ *  failed fast). Returns false only for an unknown/expired execution id. */
 export function resolveClientExecution(sessionId: string, executionId: string, result: ToolResult): boolean {
   const k = key(sessionId, executionId);
   const pending = pendingExecutions.get(k);
   if (!pending) return false;
 
+  const shaped = validateToolResultShape(result);
+  if (!shaped.ok) {
+    return consumeWithError(k, pending, `WebContainer returned a malformed tool result (${shaped.error}) Retry the step.`);
+  }
+  if (pending.expectedStepId !== undefined && shaped.result.step_id !== pending.expectedStepId) {
+    return consumeWithError(
+      k,
+      pending,
+      `WebContainer returned a result for step ${shaped.result.step_id}, but step ${pending.expectedStepId} was waiting. The stale result was discarded; retry the step.`
+    );
+  }
+
   clearTimeout(pending.idleTimer);
   clearTimeout(pending.hardTimer);
   pendingExecutions.delete(k);
-  pending.resolve(result);
+  pending.resolve(shaped.result);
   return true;
 }
 
@@ -150,6 +242,10 @@ const APPROVAL_TIMEOUT_MS = 600_000;
 type PendingApproval = {
   resolve: (decision: ApprovalDecision) => void;
   timer: ReturnType<typeof setTimeout>;
+  /** Identity of the plan awaiting approval. A decision for any other plan
+   *  (stale replay after a new turn opened a new gate) is rejected. */
+  planHash: string | null;
+  createdAt: number;
 };
 
 // Approval is the same cross-route rendezvous as tool results, so it needs the
@@ -173,12 +269,33 @@ export function getPendingExecutionCount(): number {
   return pendingExecutions.size;
 }
 
+/** Deterministic identity for an approved plan: summary plus the ordered
+ *  (step, description, tool) triples. The executor compares the emission-time
+ *  plan against this hash before mutating anything — the model can never
+ *  silently widen an approved plan because the gate is bound to its bytes. */
+export function hashPlan(plan: { plan_summary: string; steps: Array<{ step_id: number; description: string; tool: string | null }> }): string {
+  const canonical = JSON.stringify({
+    s: plan.plan_summary,
+    steps: plan.steps.map((s) => [s.step_id, s.description, s.tool ?? null]),
+  });
+  let hash = 5381;
+  for (let i = 0; i < canonical.length; i++) {
+    hash = ((hash << 5) + hash + canonical.charCodeAt(i)) | 0;
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
 /** Block the turn until the client posts a decision to /api/trion/approval.
  *  This is a HARD gate: nothing executes while the promise is pending. A
  *  stale gate (no answer) resolves to "cancel" after the timeout so the turn
  *  ends cleanly instead of hanging the SSE stream forever. */
-export function awaitPlanApproval(sessionId: string, timeoutMs: number = APPROVAL_TIMEOUT_MS): Promise<ApprovalDecision> {
+export function awaitPlanApproval(
+  sessionId: string,
+  opts?: { planHash?: string; timeoutMs?: number } | number
+): Promise<ApprovalDecision> {
   const k = approvalKey(sessionId);
+  const timeoutMs = typeof opts === "number" ? opts : (opts?.timeoutMs ?? APPROVAL_TIMEOUT_MS);
+  const planHash = typeof opts === "number" ? null : (opts?.planHash ?? null);
 
   return new Promise<ApprovalDecision>((resolve) => {
     const timer = setTimeout(() => {
@@ -186,16 +303,22 @@ export function awaitPlanApproval(sessionId: string, timeoutMs: number = APPROVA
       resolve("cancel");
     }, timeoutMs);
 
-    pendingApprovals.set(k, { resolve, timer });
+    pendingApprovals.set(k, { resolve, timer, planHash, createdAt: Date.now() });
   });
 }
 
 /** Resolve a pending approval gate from the client's approval POST. Returns
- *  true when a matching pending gate was found and resolved. */
-export function resolvePlanApproval(sessionId: string, decision: ApprovalDecision): boolean {
+ *  true when a matching pending gate was found and resolved. A decision that
+ *  names a DIFFERENT plan hash than the gate holds is rejected without
+ *  consuming the gate: the legitimate answer can still arrive. Omitting the
+ *  hash preserves backwards compatibility (accepted when a gate is pending). */
+export function resolvePlanApproval(sessionId: string, decision: ApprovalDecision, planHash?: string): boolean {
   const k = approvalKey(sessionId);
   const pending = pendingApprovals.get(k);
   if (!pending) return false;
+  if (pending.planHash !== null && planHash !== undefined && planHash !== pending.planHash) {
+    return false;
+  }
 
   clearTimeout(pending.timer);
   pendingApprovals.delete(k);

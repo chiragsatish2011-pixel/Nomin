@@ -423,7 +423,10 @@ export type Artifact = {
 /** Trace-derived evidence for whether runnable changes were actually checked. */
 export type VerificationSummary = {
   required: boolean;
-  status: "not_needed" | "passed" | "not_run" | "failed";
+  /** "started" means a dev server began serving (process startup) without any
+   *  build/test/lint proving the change is correct. It is honest final
+   *  evidence — not a pass, and not a reason to pause the turn. */
+  status: "not_needed" | "passed" | "started" | "not_run" | "failed";
   command?: string;
   message: string;
 };
@@ -533,7 +536,7 @@ export type StreamEvent =
   | { type: "tool_call"; call: ToolCall }
   | { type: "tool_result"; step_id: number; status: ToolResult["status"] | "approval_required"; output?: string }
   | { type: "plan_skipped"; reason: "plan_mode" }
-  | { type: "plan_approval"; plan: Plan; reason?: string }
+  | { type: "plan_approval"; plan: Plan; reason?: string; planHash: string }
   | { type: "result"; data: AgentOutput }
   | { type: "error"; error: ErrorOutput };
 

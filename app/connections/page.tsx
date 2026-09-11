@@ -4,7 +4,6 @@ import { FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
 import { Check, KeyRound, MessageSquareText, PanelLeftClose, PanelLeftOpen, Plug, Search, Unplug } from "lucide-react";
 import { AccountMenu } from "@/app/components/AccountMenu";
-import { AccountRouteGuard } from "@/app/components/AccountRouteGuard";
 import { JellyfishMark } from "@/app/components/JellyfishMark";
 import { ThemeToggle } from "@/app/components/ThemeToggle";
 import { clearConnection, readConnection, safeConnectionLabel, saveConnection, type ByokConfig, type ConnectionProvider } from "@/app/lib/byok-client";
@@ -81,5 +80,5 @@ function ConnectionsPageContent() {
 }
 
 export default function ConnectionsPage() {
-  return <AccountRouteGuard><ConnectionsPageContent /></AccountRouteGuard>;
+  return <ConnectionsPageContent />;
 }

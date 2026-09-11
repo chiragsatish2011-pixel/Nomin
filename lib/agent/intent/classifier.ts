@@ -25,6 +25,7 @@ const AMBIGUOUS_PATTERNS = [
   /\bcan\s+we\s+(do|work)\b/i,           // "can we do", "can we work"
   /^\s*can\s+u\s+(build|make|create|do|fix)\s+(something|anything|a\s+thing|stuff)\b/i,  // "can u build something" - vague object
   /^\s*can\s+you\s+(build|make|create|do|fix)\s+(something|anything|a\s+thing|stuff)\b/i, // "can you build something" - vague object
+  /^\s*could\s+(?:you|u)\s+(?:build|make|create)\s+(?:literally\s+)?(?:something|anything|a\s+thing|stuff)\b/i, // exploratory request, not consent to invent a product
   /^\s*help\s+(me|us)\s+(?:build|make|create|do|fix)\s+(something|anything|a\s+thing|stuff)\b/i, // delegated work with no actual outcome
   /\bhelp\s+(me|us)\b(?!\s+(with|do|fix|create|build|write|code|debug|test|deploy))/i, // "help me" without specific context
   /\bwhat\s+(should|do)\s+(i|we)\b/i,    // "what should i do", "what do we do"

@@ -2,7 +2,7 @@
 // Builds and validates the single AgentOutput object
 
 import type { AgentOutput, SynthesisDoc, PlanDoc, ToolTraceEntry, Artifact, Plan, VerificationSummary } from "../types";
-import { sanitize, sanitizeArtifact, assertNoLeaksInObject } from "../sanitize";
+import { sanitize, sanitizeArtifact, assertNoLeaksInOutput } from "../sanitize";
 
 export function buildFinalOutput(
   synthesis: SynthesisDoc,
@@ -36,8 +36,9 @@ export function buildFinalOutput(
   // Validate against contract
   validateAgentOutput(output);
 
-  // Final leak check on entire output
-  assertNoLeaksInObject(output, "final AgentOutput");
+  // Final leak check on model-authored prose. Code bodies (write_file trace
+  // inputs, artifact contents) are exempt by design — see assertNoLeaksInOutput.
+  assertNoLeaksInOutput(output);
 
   return output;
 }
@@ -133,7 +134,7 @@ function validateAgentOutput(output: AgentOutput): void {
   }
 
   if (output.verification !== undefined && output.verification !== null) {
-    if (!output.verification.message || !["not_needed", "passed", "not_run", "failed"].includes(output.verification.status)) {
+    if (!output.verification.message || !["not_needed", "passed", "started", "not_run", "failed"].includes(output.verification.status)) {
       throw new Error("Invalid verification evidence");
     }
   }

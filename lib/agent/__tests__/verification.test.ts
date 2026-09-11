@@ -46,6 +46,26 @@ describe("evaluateVerification", () => {
       entry("run_command", "error", { command: "npm test" }),
     ])).toMatchObject({ required: true, status: "failed", command: "npm test" });
   });
+
+  it("reports a started dev server as startup evidence, not a pass", () => {
+    for (const command of ["npm run dev", "npm start", "npx vite preview"]) {
+      const result = evaluateVerification([
+        entry("write_file", "success", { path: "src/Counter.tsx" }),
+        entry("run_command", "success", { command }),
+      ]);
+      expect(result).toMatchObject({ required: true, status: "started", command });
+      expect(result.message).toMatch(/live in preview/i);
+      expect(result.message).toMatch(/no build, test, or typecheck/i);
+    }
+  });
+
+  it("still passes when a real build ran, even alongside a dev server", () => {
+    expect(evaluateVerification([
+      entry("write_file", "success", { path: "src/Counter.tsx" }),
+      entry("run_command", "success", { command: "npm run dev" }),
+      entry("run_command", "success", { command: "npm run build" }),
+    ])).toMatchObject({ required: true, status: "passed", command: "npm run build" });
+  });
 });
 
 describe("verification completion gate", () => {

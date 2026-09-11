@@ -8,6 +8,7 @@ import {
   awaitPlanApproval,
   resolvePlanApproval,
   closePlanApproval,
+  validateToolResultShape,
 } from "../bridge";
 
 describe("execution bridge — WebContainer tool results", () => {
@@ -105,8 +106,7 @@ describe("plan approval gate (Step 1.5)", () => {
   });
 });
 
-describe("cross-route module identity", () => {
-  it("resolves a browser result from a separately evaluated route bundle", async () => {
+describe("cross-route module identity", () => {  it("resolves a browser result from a separately evaluated route bundle", async () => {
     const original = await import("../bridge");
     const pending = original.awaitClientExecution("session-cross-route", "exec-1", 5_000);
 
@@ -123,5 +123,78 @@ describe("cross-route module identity", () => {
     })).toBe(true);
 
     await expect(pending).resolves.toMatchObject({ output: "returned by the browser" });
+  });
+});
+
+describe("tool result shape and step binding", () => {
+  it("fails fast on a malformed payload instead of poisoning the trace", async () => {
+    const pending = awaitClientExecution("session-shape", "exec-1", 5_000, { stepId: 2, action: "read_file" });
+    const consumed = resolveClientExecution("session-shape", "exec-1", { step_id: 2, ok: true } as never);
+    expect(consumed).toBe(true);
+    await expect(pending).rejects.toThrow(/malformed tool result/);
+  });
+
+  it("rejects ok/status disagreement", () => {
+    expect(validateToolResultShape({ step_id: 1, ok: true, status: "error", output: "" }).ok).toBe(false);
+    expect(validateToolResultShape({ step_id: 1, ok: false, status: "success", output: "" }).ok).toBe(false);
+    expect(validateToolResultShape({ step_id: 1, ok: true, status: "success", output: "x" }).ok).toBe(true);
+  });
+
+  it("rejects malformed artifacts", () => {
+    expect(
+      validateToolResultShape({ step_id: 1, ok: true, status: "success", output: "x", artifacts: [{ type: "exe", content: "y" }] }).ok
+    ).toBe(false);
+  });
+
+  it("discards a result for the wrong step and fails that step fast", async () => {
+    const pending = awaitClientExecution("session-step", "exec-1", 5_000, { stepId: 3, action: "write_file" });
+    const consumed = resolveClientExecution("session-step", "exec-1", { step_id: 4, ok: true, status: "success", output: "stale" });
+    expect(consumed).toBe(true);
+    await expect(pending).rejects.toThrow(/for step 4, but step 3 was waiting/);
+  });
+
+  it("accepts a result whose step matches the binding", async () => {
+    const pending = awaitClientExecution("session-step-ok", "exec-1", 5_000, { stepId: 3, action: "write_file" });
+    expect(resolveClientExecution("session-step-ok", "exec-1", { step_id: 3, ok: true, status: "success", output: "good" })).toBe(true);
+    await expect(pending).resolves.toMatchObject({ output: "good" });
+  });
+
+  it("still accepts results for unbound executions (backwards compatible)", async () => {
+    const pending = awaitClientExecution("session-unbound", "exec-1", 5_000);
+    expect(resolveClientExecution("session-unbound", "exec-1", { step_id: 9, ok: true, status: "success", output: "ok" })).toBe(true);
+    await expect(pending).resolves.toMatchObject({ output: "ok" });
+  });
+});
+
+describe("plan approval binding", () => {
+  const planA = { plan_summary: "build a", steps: [{ step_id: 1, description: "write a", tool: "write_file" as const }] };
+  const planB = { plan_summary: "build b", steps: [{ step_id: 1, description: "write b", tool: "write_file" as const }] };
+
+  it("hashes a plan deterministically", async () => {
+    const { hashPlan } = await import("../bridge");
+    expect(hashPlan(planA)).toBe(hashPlan(planA));
+    expect(hashPlan(planA)).not.toBe(hashPlan(planB));
+    expect(hashPlan(planA)).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it("rejects a decision for a superseded plan without consuming the gate", async () => {
+    const gate = awaitPlanApproval("session-appr", { planHash: "aaaa1111", timeoutMs: 5_000 });
+    expect(resolvePlanApproval("session-appr", "approve", "bbbb2222")).toBe(false);
+    // The legitimate answer still releases the gate.
+    expect(resolvePlanApproval("session-appr", "approve", "aaaa1111")).toBe(true);
+    await expect(gate).resolves.toBe("approve");
+  });
+
+  it("accepts a decision without a hash (backwards compatible client)", async () => {
+    const gate = awaitPlanApproval("session-appr-compat", { planHash: "aaaa1111", timeoutMs: 5_000 });
+    expect(resolvePlanApproval("session-appr-compat", "approve")).toBe(true);
+    await expect(gate).resolves.toBe("approve");
+  });
+
+  it("a duplicate decision after resolution is a no-op", async () => {
+    const gate = awaitPlanApproval("session-appr-dup", { planHash: "aaaa1111", timeoutMs: 5_000 });
+    expect(resolvePlanApproval("session-appr-dup", "approve", "aaaa1111")).toBe(true);
+    expect(resolvePlanApproval("session-appr-dup", "approve", "aaaa1111")).toBe(false);
+    await expect(gate).resolves.toBe("approve");
   });
 });

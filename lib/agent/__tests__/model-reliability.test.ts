@@ -17,7 +17,7 @@ describe("model-call reliability budgets", () => {
   });
 
   it("reserves one longer attempt for a full-file authoring decision", () => {
-    const authoring = { timeoutMs: 90_000, maxAttempts: 1 };
+    const authoring = { timeoutMs: 180_000, maxAttempts: 1 };
     expect(authoring.timeoutMs).toBeGreaterThan(CALL_RELIABILITY.execution_decision.timeoutMs);
     expect(authoring.maxAttempts).toBe(1);
   });

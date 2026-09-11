@@ -306,8 +306,9 @@ request against a real budget, so it is worth spending where it settles whether
 the work is done, and wasteful anywhere else:
 - Changed code that has to compile or run → verify.
 - Wrote prose, a README, a config comment, or read-only inspection → do not.
-- Started a dev server that reported ready → that IS the verification. Do not
-  add a second check on top of it.`;
+- Started a dev server that reported ready → that IS the startup check: the
+  preview is live. Say so, but do not claim the behavior is verified — only a
+  build, test, or typecheck proves that. Do not add a second check on top of it.`;
 
 const EXECUTE_WRITING = `=== WRITING FILES ===
 - write_file replaces the ENTIRE file. Emit complete, runnable content.

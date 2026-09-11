@@ -85,6 +85,23 @@ export function sanitizeObject(obj: unknown): unknown {
   return obj;
 }
 
+/**
+ * Sanitize a tool-call input record WITHOUT corrupting the artifact being
+ * created. A write_file `content` body must reach the disk byte-exact: the
+ * previous behavior replaced vendor-looking substrings inside user code (e.g.
+ * a Gemini API integration became a Trion API integration on disk), so the
+ * file the trace claimed to verify was not the file the model authored.
+ * Identity is enforced on prose (thought/summary/messages), never on code.
+ */
+export function sanitizeToolInput(action: string, input: Record<string, unknown>): Record<string, unknown> {
+  if (action !== "write_file") return sanitizeObject(input) as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    out[key] = key === "content" ? value : sanitizeObject(value);
+  }
+  return out;
+}
+
 export function sanitizeTraceEntry(entry: {
   step_id: number;
   tool_name: string;
@@ -102,10 +119,16 @@ export function sanitizeTraceEntry(entry: {
   attempt: number;
   path_used?: "hosted" | "gemini" | "deterministic";
 } {
+  // write_file content is the artifact being created: it stays byte-exact so
+  // the trace remains evidence of what is actually on disk (see
+  // sanitizeToolInput). Every other field is model/description prose.
+  const input = entry.tool_name === "write_file"
+    ? sanitizeToolInput(entry.tool_name, entry.input)
+    : (sanitizeObject(entry.input) as Record<string, unknown>);
   return {
     ...entry,
     output: sanitize(entry.output),
-    input: sanitizeObject(entry.input) as Record<string, unknown>,
+    input,
     tool_name: sanitize(entry.tool_name),
   };
 }
@@ -121,9 +144,12 @@ export function sanitizeArtifact(artifact: {
   content: string;
   preview_url?: string;
 } {
+  // Artifact content is user code that is written to disk and shown as the
+  // deliverable: replacing substrings inside it corrupts the product (and its
+  // evidence). Identity is enforced on the surrounding prose instead.
   return {
     ...artifact,
-    content: sanitize(artifact.content),
+    content: artifact.content,
     language: artifact.language ? sanitize(artifact.language) : undefined,
     preview_url: artifact.preview_url ? sanitize(artifact.preview_url) : undefined,
   };
@@ -131,13 +157,17 @@ export function sanitizeArtifact(artifact: {
 
 export function assertNoLeaks(text: string, context: string): void {
   if (!text || typeof text !== "string") return;
-  for (const { pattern } of BANNED_PATTERNS) {
+  for (let index = 0; index < BANNED_PATTERNS.length; index++) {
+    const { pattern } = BANNED_PATTERNS[index];
     // The shared patterns carry the /g flag; .test() advances lastIndex, which
     // would make leak detection skip matches intermittently. Test against a
     // fresh, non-global clone instead.
     const probe = new RegExp(pattern.source, pattern.flags.replace(/g/g, ""));
     if (probe.test(text)) {
-      throw new Error(`Identity leak in ${context}: matched ${pattern.source}`);
+      // Never echo the matched pattern source: it contains the very vendor
+      // strings this boundary exists to suppress, so the error itself would
+      // be the leak if it ever reached a user-facing surface.
+      throw new Error(`Identity leak in ${context} (rule ${index})`);
     }
   }
 }
@@ -157,4 +187,38 @@ export function assertNoLeaksInObject(obj: unknown, context: string): void {
       assertNoLeaksInObject(value, `${context}.${key}`);
     }
   }
+}
+
+/**
+ * Final-output leak check that respects the code/prose split. Code bodies
+ * (write_file trace inputs, artifact contents) are the user's product and may
+ * legitimately name third-party SDKs — asserting on them turned a correct
+ * Gemini API integration into a turn-ending internal error. Everything
+ * model-authored around the code is still checked.
+ */
+export function assertNoLeaksInOutput(output: {
+  message: string;
+  plan: { summary: string; steps: Array<{ description: string }> } | null;
+  tool_trace: Array<{ tool_name: string; input: Record<string, unknown>; output: string }>;
+  artifacts: Array<{ language?: string; preview_url?: string }>;
+  next_action_hint?: string | null;
+}): void {
+  assertNoLeaks(output.message, "final AgentOutput.message");
+  if (output.next_action_hint) assertNoLeaks(output.next_action_hint, "final AgentOutput.next_action_hint");
+  if (output.plan) {
+    assertNoLeaks(output.plan.summary, "final AgentOutput.plan.summary");
+    output.plan.steps.forEach((step, i) => assertNoLeaks(step.description, `final AgentOutput.plan.steps[${i}]`));
+  }
+  output.tool_trace.forEach((entry, i) => {
+    assertNoLeaks(entry.tool_name, `final AgentOutput.tool_trace[${i}].tool_name`);
+    assertNoLeaks(entry.output, `final AgentOutput.tool_trace[${i}].output`);
+    for (const [key, value] of Object.entries(entry.input)) {
+      if (entry.tool_name === "write_file" && key === "content") continue;
+      assertNoLeaksInObject(value, `final AgentOutput.tool_trace[${i}].input.${key}`);
+    }
+  });
+  output.artifacts.forEach((artifact, i) => {
+    if (artifact.language) assertNoLeaks(artifact.language, `final AgentOutput.artifacts[${i}].language`);
+    if (artifact.preview_url) assertNoLeaks(artifact.preview_url, `final AgentOutput.artifacts[${i}].preview_url`);
+  });
 }

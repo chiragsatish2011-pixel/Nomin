@@ -192,7 +192,11 @@ The user explicitly limited this request to exactly 2 files: one React component
 The user explicitly limited this request to exactly ${count} file${count === 1 ? "" : "s"}. The plan MUST contain exactly ${count} write_file steps, must not add integration, polish, metadata, or configuration files beyond that count, and must name the requested output files. When one React component is requested without a path, modify the app entry component rather than creating an additional component. Treat this as a hard contract, not a preference.`;
 }
 
-const VALID_TOOLS = new Set(["read_file", "search_codebase", "web_fetch", "write_file", "run_command", "finish"]);
+// "finish" is deliberately absent: the plan prompt never offers it, and a plan
+// step carrying it would act as a terminator that ends the turn with no
+// approved tool ever running. The executor's action contract already routes a
+// genuine no-tool step through tool:null + finish.
+const VALID_TOOLS = new Set(["read_file", "search_codebase", "web_fetch", "write_file", "run_command"]);
 const MAX_STEPS = 5;
 const RUNNABLE_SOURCE = /\.(?:[cm]?[jt]sx?|css|scss|sass|less|html?|vue|svelte|json)$/i;
 const VERIFICATION_WORDS = /\b(?:build|test|lint|typecheck|type-check|check|validate|verify|development server|dev server|preview)\b/i;
@@ -223,9 +227,9 @@ export function ensureVerificationStep(plan: PlanDoc): PlanDoc {
   return {
     ...plan,
     plan_summary: `${plan.plan_summary} Includes a final project check before reporting the result ready.`,
-    // A planner is capped at ten normal work steps. Verification is a required
-    // completion gate, not optional decoration, so it may make the plan eleven
-    // steps rather than silently dropping a user-visible implementation step.
+    // The planner is capped at MAX_STEPS normal work steps. Verification is a required
+    // completion gate, not optional decoration, so it may make the plan one
+    // step longer rather than silently dropping a user-visible implementation step.
     steps: [...plan.steps, verificationStep],
   };
 }

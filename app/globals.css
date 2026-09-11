@@ -27,17 +27,25 @@
   font-display: swap;
 }
 
+/* Self-hosted rather than fetched from the font CDN.
+ *
+ * These two rules previously pointed at a hardcoded, VERSIONED gstatic binary
+ * (`.../jetbrainsmono/v23/...woff2`). Those URLs are not stable — the family had
+ * since moved to v24 and the pinned file returned 404, so every monospace
+ * surface in the app (code blocks, the diff viewer, the trace) silently fell
+ * back to the generic system mono.
+ *
+ * Self-hosting is also the right call for this app specifically: it sets
+ * `Cross-Origin-Embedder-Policy: require-corp`, which makes any cross-origin
+ * subresource dependent on that origin's CORP headers. A same-origin font has
+ * no such coupling and cannot rotate out from under us.
+ *
+ * One file serves both weights: JetBrains Mono ships as a variable font, so the
+ * 400-500 range is interpolated rather than downloaded twice. */
 @font-face {
   font-family: "JetBrains Mono";
-  src: url("https://fonts.gstatic.com/s/jetbrainsmono/v23/tDbD2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKg.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "JetBrains Mono";
-  src: url("https://fonts.gstatic.com/s/jetbrainsmono/v23/tDbD2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKg.woff2") format("woff2");
-  font-weight: 500;
+  src: url("/fonts/jetbrains-mono-variable.woff2") format("woff2-variations");
+  font-weight: 400 500;
   font-style: normal;
   font-display: swap;
 }
@@ -3175,6 +3183,24 @@ pre {
   color: rgb(var(--ink-rgb) / 0.42);
   font-size: 13px;
   letter-spacing: 0.01em;
+  /* The model switcher is a primary control, but as bare inline text it rendered
+     a 49x16px hit area — below the 24px minimum target size, and the hardest
+     control on the composer row to hit on a phone. The padding grows the
+     TAPPABLE area around the text; the matching negative margin keeps the text
+     in exactly the same visual position, so this is a hit-area fix and not a
+     layout change. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border-radius: 8px;
+}
+
+/* It is a link, so keyboard users need to see where they are. */
+.composerModelTag:focus-visible {
+  outline: 2px solid rgb(var(--ink-rgb) / 0.55);
+  outline-offset: 1px;
 }
 
 /* Starting points, sized as quiet pills so they suggest without competing with
@@ -4831,64 +4857,8 @@ pre {
 @media (max-width: 760px) { .capacitySidebar { bottom: 0; box-shadow: 20px 0 60px rgb(var(--shadow-rgb) / .22); left: 0; position: fixed; top: 0; z-index: 30; }.capacityTop { padding-left: 62px; }.capacityTop nav { justify-content: flex-end; }.capacityTop .capacityBack { display: none; }.capacityGrid { grid-template-columns: repeat(2,minmax(0,1fr)); }.capacityContent { padding: 36px 20px 56px; } }
 @media (max-width: 480px) { .capacityTop .accountName { display: none; }.capacityGrid { grid-template-columns: 1fr; }.capacityHero h1 { font-size: clamp(32px, 12vw, 48px); } }
 
-/* Account controls and sign-in — calm editorial layout, using Nomin's own
-   violet/aqua mark rather than importing another product's visual identity. */
-.accountButton, .accountCluster { align-items: center; display: inline-flex; gap: 7px; }
-.accountButton { border: 1px solid var(--outline-variant); border-radius: 999px; color: var(--secondary); font-size: 12px; min-height: 34px; padding: 0 12px; text-decoration: none; }
-.accountButton.primary { background: var(--primary); color: var(--primary-foreground); }
-.accountStatus { color: var(--muted-ink); font-size: 12px; }
-.accountCluster { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 999px; padding: 3px 5px 3px 4px; }
-.accountAvatar { align-items: center; background: linear-gradient(135deg, var(--jelly-violet), var(--jelly-aqua)); border-radius: 50%; color: white; display: inline-flex; font-size: 11px; font-weight: 700; height: 26px; justify-content: center; width: 26px; }
-.accountAvatarPhoto { border: 1px solid var(--outline-variant); object-fit: cover; }
-.accountName { color: var(--secondary); font-size: 12px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .accountIcon { align-items: center; background: transparent; border: 0; border-radius: 50%; color: var(--muted-ink); cursor: pointer; display: inline-flex; height: 27px; justify-content: center; width: 27px; }
 .accountIcon:hover { background: rgb(var(--ink-rgb) / .08); color: var(--crisp-white); }
-
-.routeGate {
-  min-height: 100vh;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 12px;
-  color: var(--text-secondary);
-  background: var(--canvas);
-  font-size: 14px;
-}
-.authPage { background: var(--canvas); color: var(--crisp-white); min-height: 100vh; }
-.authTop { align-items: center; display: flex; height: 72px; justify-content: space-between; padding: 0 clamp(22px, 5vw, 72px); }
-.authBrand { align-items: center; color: var(--crisp-white); display: inline-flex; font-size: 20px; gap: 10px; text-decoration: none; }
-.authLayout { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(390px, .88fr); margin: 0 auto; max-width: 1240px; min-height: calc(100vh - 72px); }
-.authStory { align-items: flex-start; display: flex; flex-direction: column; justify-content: center; overflow: hidden; padding: clamp(40px, 8vw, 108px); position: relative; }
-.authStory::before { background: radial-gradient(circle, rgb(var(--accent-rgb) / .13), transparent 66%); content: ""; height: 540px; left: -180px; pointer-events: none; position: absolute; top: 10%; width: 540px; }
-.authEyebrow { color: var(--sea-green); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-.authStory h1 { font-family: var(--font-display); font-size: clamp(44px, 6vw, 78px); font-weight: 400; letter-spacing: -.045em; line-height: 1; margin: 20px 0 24px; max-width: 690px; position: relative; }
-.authStory > p { color: var(--muted-ink); font-size: 16px; line-height: 1.65; margin: 0; max-width: 520px; }
-.authStory ul { display: grid; gap: 11px; list-style: none; margin: 34px 0 0; padding: 0; }
-.authStory li { align-items: center; color: var(--secondary); display: flex; font-size: 14px; gap: 9px; }
-.authStory li svg { color: var(--sea-green); }
-.authJelly { bottom: 7%; opacity: .16; position: absolute; right: 4%; }
-.authPanel { align-self: center; background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 18px; box-shadow: var(--panel-shadow); display: grid; gap: 17px; margin: 40px; padding: clamp(28px, 4vw, 48px); }
-.authPanel h2 { font-family: var(--font-display); font-size: 34px; font-weight: 450; margin: 8px 0; }
-.authPanel > div > p:last-child { color: var(--muted-ink); margin: 0; }
-.authConfigNote { background: rgb(var(--accent-rgb) / .08); border: 1px solid rgb(var(--accent-rgb) / .2); border-radius: 10px; color: var(--secondary); font-size: 13px; line-height: 1.5; padding: 12px 14px; }
-.googleButton, .authSubmit { align-items: center; border-radius: 10px; cursor: pointer; display: flex; font-weight: 650; gap: 10px; justify-content: center; min-height: 46px; }
-.googleButton { background: var(--canvas); border: 1px solid var(--outline-variant); color: var(--crisp-white); }
-.googleGlyph { align-items: center; background: white; border-radius: 50%; color: #4285f4; display: inline-flex; font-family: Arial, sans-serif; font-weight: 800; height: 22px; justify-content: center; width: 22px; }
-.authDivider { align-items: center; color: var(--muted-ink); display: flex; font-size: 11px; gap: 12px; text-transform: uppercase; }
-.authDivider::before, .authDivider::after { background: var(--outline-variant); content: ""; flex: 1; height: 1px; }
-.authField { display: grid; gap: 7px; }
-.authField span { color: var(--secondary); font-size: 12px; font-weight: 650; }
-.authField input { background: var(--canvas); border: 1px solid var(--outline-variant); border-radius: 9px; color: var(--crisp-white); font: inherit; min-height: 45px; outline: none; padding: 0 13px; }
-.authField input:focus { border-color: rgb(var(--accent-rgb) / .58); box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .09); }
-.authSubmit { background: var(--primary); border: 0; color: var(--primary-foreground); }
-.authSubmit:disabled, .googleButton:disabled { cursor: not-allowed; opacity: .48; }
-.authTextButton, .authSwitch button { background: none; border: 0; color: var(--sea-green); cursor: pointer; padding: 0; }
-.authTextButton { justify-self: center; }
-.authSwitch { color: var(--muted-ink); font-size: 13px; margin: 0; text-align: center; }
-.authError { color: var(--danger-text); font-size: 13px; margin: 0; }.authNotice { color: var(--sea-green); font-size: 13px; margin: 0; }.spin { animation: spin 1s linear infinite; }@keyframes spin { to { transform: rotate(360deg); } }
-
-@media (max-width: 860px) { .authLayout { display: block; }.authStory { display: none; }.authPanel { margin: clamp(24px, 8vw, 72px) auto; max-width: 520px; }.accountName { display: none; } }
-@media (max-width: 560px) { .authPanel { border-inline: 0; border-radius: 0; margin: 20px 0; }.landingThemeSlot .accountButton span, .topBarActions .accountName { display: none; } }
 
 /* Dark surfaces use clear neutral-violet separation rather than muddy navy. */
 [data-theme="dark"] {
@@ -4903,7 +4873,7 @@ pre {
 }
 [data-theme="dark"] .zenWorkspace, [data-theme="dark"] .landingPage { background: radial-gradient(circle at 62% 18%, rgb(112 75 187 / .09), transparent 36%), #0e0b14; }
 [data-theme="dark"] .zenSidebar, [data-theme="dark"] .landingSidebar { background: rgb(22 18 30 / .96); border-right-color: rgb(235 228 255 / .13); }
-[data-theme="dark"] .composerShell, [data-theme="dark"] .workPanel, [data-theme="dark"] .authPanel { background: rgb(25 20 34 / .94); border-color: rgb(235 228 255 / .16); }
+[data-theme="dark"] .composerShell, [data-theme="dark"] .workPanel { background: rgb(25 20 34 / .94); border-color: rgb(235 228 255 / .16); }
 @media (max-width: 900px) { .capacityGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .capacityGrid { grid-template-columns: 1fr; } .capacityHero { margin-top: 70px; } }
 

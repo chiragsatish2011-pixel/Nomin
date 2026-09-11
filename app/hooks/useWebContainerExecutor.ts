@@ -171,10 +171,17 @@ export function useWebContainerExecutor() {
 
     // A tool can have completed perfectly while the dev route is briefly
     // unavailable after HMR or a network hiccup. A fire-and-forget POST then
-    // leaves the server bridge waiting until its timeout. Acknowledging the
-    // hand-off makes delivery reliable without re-running the tool itself.
+    // leaves the server bridge waiting until its timeout. Only a 2xx response
+    // proves the server received the result. In particular, 404 means the
+    // bridge did *not* find this execution id; treating that as success was a
+    // false acknowledgement and produced a later "paused after confirmed
+    // work" message even though the browser had already completed the tool.
+    // A success computed during a longer outage (laptop sleep, offline gap)
+    // needs a wider delivery window than a dev-server hiccup: the attempts
+    // below span ~11s, still far inside the server's 45s bridge idle budget,
+    // so a late-but-real result still lands instead of becoming a false pause.
     const payload = JSON.stringify({ sessionId, executionId, result });
-    for (const delay of [0, 250, 750]) {
+    for (const delay of [0, 250, 750, 1_500, 3_000, 6_000]) {
       if (delay) await new Promise((resolve) => window.setTimeout(resolve, delay));
       try {
         const response = await fetch("/api/trion/tool-result", {
@@ -182,7 +189,7 @@ export function useWebContainerExecutor() {
           headers: { "content-type": "application/json" },
           body: payload,
         });
-        if (response.ok || response.status === 404) return;
+        if (response.ok) return;
       } catch {
         // A later attempt may land after the route finishes recovering.
       }
