@@ -166,12 +166,19 @@ export function pausedTaskSynthesis(toolTrace: ToolTraceEntry[], error?: Error):
  * stage-accurate so the user is never told a nonexistent build step was saved. */
 export function planningFailureSynthesis(error?: Error): SynthesisDoc {
   const detail = error?.message ?? "";
-  const capacityLimited = /shared model-request limit|rate limit|resourceexhausted|too many requests/i.test(detail);
+  // Character-class variants matter: the BYOK path says "rate-limiting" (hyphen)
+  // while the hosted path says "rate limit" (space) — the old space-only
+  // pattern let real 429s fall through to the generic fallback.
+  const capacityLimited = /shared model-request limit|rate[- ]limit|resourceexhausted|too many requests/i.test(detail);
   const missingProvider = /not configured in this environment/i.test(detail);
   const keyRejected = /api key was rejected|HTTP 401|HTTP 403/i.test(detail);
   const modelNotFound = /selected model or provider endpoint was not found|HTTP 404/i.test(detail);
-  const timedOut = /timed out|timeout/i.test(detail);
-  const providerFailed = /could not complete this request|HTTP 5\d\d/i.test(detail);
+  // "could not complete this step in time" (tool bridge) previously missed the
+  // timeout branch, which only knew "timed out|timeout".
+  const timedOut = /timed out|timeout|could not complete this (step|request) in time/i.test(detail);
+  // "empty response" and "output limit" are provider-side truncations, not plan
+  // bugs — route them to the retryable provider message, not the generic one.
+  const providerFailed = /could not complete this request|HTTP 5\d\d|empty response|output limit/i.test(detail);
   const connectionProblem = keyRejected || modelNotFound;
   return {
     message: capacityLimited
@@ -201,12 +208,12 @@ export function planningFailureSynthesis(error?: Error): SynthesisDoc {
  * (no model call — the model is what just failed). */
 export function answerFailureSynthesis(error?: Error): SynthesisDoc {
   const detail = error?.message ?? "";
-  const capacityLimited = /shared model-request limit|rate limit|resourceexhausted|too many requests/i.test(detail);
+  const capacityLimited = /shared model-request limit|rate[- ]limit|resourceexhausted|too many requests/i.test(detail);
   const missingProvider = /not configured in this environment/i.test(detail);
   const keyRejected = /api key was rejected|HTTP 401|HTTP 403/i.test(detail);
   const modelNotFound = /selected model or provider endpoint was not found|HTTP 404/i.test(detail);
-  const timedOut = /timed out|timeout/i.test(detail);
-  const providerFailed = /could not complete this request|HTTP 5\d\d/i.test(detail);
+  const timedOut = /timed out|timeout|could not complete this (step|request) in time/i.test(detail);
+  const providerFailed = /could not complete this request|HTTP 5\d\d|empty response|output limit/i.test(detail);
   const connectionProblem = missingProvider || keyRejected || modelNotFound;
   return {
     message: capacityLimited

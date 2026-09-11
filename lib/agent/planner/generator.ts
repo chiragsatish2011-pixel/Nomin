@@ -9,8 +9,44 @@ import type { NimMessage, StreamEvent } from "../types";
 import { PLAN_SYSTEM_PROMPT } from "../static-prompts";
 import { buildContextWindow, renderContextWindow, CONTEXT_PRESETS } from "../context";
 import { frameUntrustedContent } from "../untrusted-content";
+import { perf } from "../perf";
 import { exhaustiveBuildTestEnabled, isInterfaceBuildRequest, stageExhaustiveInterfacePlan } from "../exhaustive-build-test";
 import { buildWorkspaceMap } from "../workspace-map";
+
+/** Which way parsePlanDoc failed. The old code collapsed all three into one
+ *  identical string, so the synthesis classifier — and the server logs — could
+ *  not tell prose-with-no-JSON apart from valid-JSON-with-empty-steps. */
+export type PlanParseStage = "no_json_pairs" | "empty_descriptions";
+
+export class PlanParseError extends Error {
+  readonly stage: PlanParseStage;
+  readonly rawChars: number;
+  readonly candidatePairs: number;
+  constructor(stage: PlanParseStage, rawChars: number, candidatePairs: number) {
+    // Keep the legacy substring so existing assertions and the generic
+    // synthesis fallback keep matching; the parenthesised prefix is the new
+    // machine-readable detail for logs and future classification.
+    super(
+      `Plan parse failed (${stage}, ${candidatePairs} candidate pairs in ${rawChars} chars): ` +
+        `the plan came back without any usable steps.`,
+    );
+    this.name = "PlanParseError";
+    this.stage = stage;
+    this.rawChars = rawChars;
+    this.candidatePairs = candidatePairs;
+  }
+}
+
+/** Total plan attempts per turn: the first try plus exactly one repair re-ask. */
+const MAX_PLAN_PARSE_ATTEMPTS = 2;
+
+/** Follow-up for the single repair re-ask. Restates the schema contract the
+ *  system prompt already sets; sent as a normal user message through the same
+ *  gateway path, not as a prompt transplant. */
+const PLAN_REPAIR_PROMPT =
+  "Your previous reply could not be parsed as a plan. Reply again with ONLY the JSON object " +
+  'using EXACTLY the fields {"plan_summary": "...", "steps": [{"step_id": 1, "description": "...", "tool": ...}]} ' +
+  "and no other text: no prose, no markdown, no code fences, no extra fields. Maximum 5 steps.";
 
 /** Produce the plan WITHOUT emitting it.
  *
@@ -33,10 +69,15 @@ export async function generatePlanDoc(input: NormalInput): Promise<PlanDoc> {
   // appeared frozen before its first browser action. Five structured steps fit
   // comfortably in 900 tokens; reserve the larger completion budget for the
   // actual file authoring call where it improves the deliverable.
-  const raw = await modelGateway.completeText(messages, {
+  //
+  // BOTH attempts go through modelGateway.completeText with identical options,
+  // so the repair re-ask rides the same queue priority, rate limiter, circuit
+  // breaker, and retry budget as the first try — never a bespoke fetch that
+  // would silently double effective RPM against the governor.
+  const gatewayOpts = {
     tier: tierForRole(input.model, "planner"),
     maxTokens: 900,
-    callType: "plan",
+    callType: "plan" as const,
     thinking: false,
     // The configured primary route did not return even a 64-token health
     // response within 70 seconds. Planning is a compact structured contract,
@@ -44,9 +85,39 @@ export async function generatePlanDoc(input: NormalInput): Promise<PlanDoc> {
     // Use the healthy fast hosted route here; deterministic schema, scope and
     // verification guards still validate its plan before execution.
     fast: true,
-  });
-  const plan = ensureVerificationStep(normalizeInterfaceWrites(parsePlanDoc(raw), input));
-  return exhaustiveBuildTestEnabled() ? stageExhaustiveInterfacePlan(plan, input) : plan;
+  };
+  // Bounded by counter, not by convention: if the model keeps answering in
+  // prose despite the repair instruction, the second PlanParseError propagates
+  // and the turn fails deterministically instead of looping.
+  let pendingMessages: NimMessage[] = messages;
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= MAX_PLAN_PARSE_ATTEMPTS; attempt += 1) {
+    const raw = await modelGateway.completeText(pendingMessages, gatewayOpts);
+    try {
+      const plan = ensureVerificationStep(normalizeInterfaceWrites(parsePlanDoc(raw), input));
+      return exhaustiveBuildTestEnabled() ? stageExhaustiveInterfacePlan(plan, input) : plan;
+    } catch (error) {
+      if (!(error instanceof PlanParseError)) throw error;
+      // Log HERE, with the raw payload in scope. The state-machine catch site
+      // only keeps the first 100 chars of the sanitized message, so anything
+      // logged there cannot diagnose a parse failure. Server logs only — the
+      // raw reply never reaches the browser.
+      perf("plan.parseFailed", 0, {
+        attempt,
+        stage: error.stage,
+        rawChars: error.rawChars,
+        candidatePairs: error.candidatePairs,
+      });
+      console.warn(
+        `[trion] plan parse attempt ${attempt}/${MAX_PLAN_PARSE_ATTEMPTS} failed ` +
+          `(stage=${error.stage}, ${error.candidatePairs} candidate pairs in ${error.rawChars} chars). ` +
+          `Raw reply (truncated): ${raw.slice(0, 4000)}`,
+      );
+      lastError = error;
+      pendingMessages = [...messages, { role: "user", content: PLAN_REPAIR_PROMPT }];
+    }
+  }
+  throw lastError;
 }
 
 /** Surface an evidence-based default as part of the user-visible plan, rather
@@ -337,7 +408,11 @@ export function parsePlanDoc(raw: string): PlanDoc {
   }
 
   if (steps.length === 0) {
-    throw new Error("The plan came back without any usable steps.");
+    throw new PlanParseError(
+      rawSteps.length === 0 ? "no_json_pairs" : "empty_descriptions",
+      text.length,
+      rawSteps.length,
+    );
   }
 
   const summary = typeof parsed?.plan_summary === "string" && parsed.plan_summary.trim()
