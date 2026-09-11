@@ -5,7 +5,11 @@ export const metadata: Metadata = {
   title: "Trion — by Nomin",
   description: "Nomin's browser-based coding agent workspace",
   icons: {
-    icon: "/favicon.svg",
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
   },
 };
 

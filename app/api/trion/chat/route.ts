@@ -8,6 +8,12 @@ import type { AgentStatus } from "@/lib/agent/types";
 import { registerActiveTurn, unregisterActiveTurn } from "@/lib/agent/turn-control";
 import { withByokProvider } from "@/lib/nim/byok-context";
 
+// Long agent turns stream NDJSON with 15s heartbeats. Without an explicit
+// maxDuration, serverless hosts (Vercel Hobby 10s / Pro 60s) kill the stream
+// and the client reports "response ended before the task finished".
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
+
 function timingLog(label: string, startTime: number, meta?: Record<string, unknown>) {
   const elapsed = Date.now() - startTime;
   perf(`timing.${label}`, elapsed, meta);

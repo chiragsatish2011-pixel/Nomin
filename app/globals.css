@@ -252,6 +252,24 @@ summary:focus-visible {
   pointer-events: none;
 }
 
+/* Deterministic route loading shell (app/loading.tsx) so hydration never
+ * paints a blank page while the client boots. */
+.loadingShell {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  min-height: 60vh;
+}
+
+@media (pointer: coarse) {
+  button {
+    min-height: 24px;
+    min-width: 24px;
+  }
+}
+
 .bootVideo,
 .bootTint {
   height: 100%;
@@ -670,12 +688,13 @@ summary:focus-visible {
 }
 
 .errorNote {
-  align-items: center;
+  align-items: flex-start;
   background: rgb(var(--danger-rgb) / 0.08);
   border: 1px solid rgb(var(--danger-rgb) / 0.20);
   border-radius: 8px;
   color: var(--danger-text);
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   justify-content: space-between;
   padding: 12px 14px;
@@ -689,7 +708,8 @@ summary:focus-visible {
   cursor: pointer;
   flex: 0 0 auto;
   font-size: 12px;
-  padding: 5px 12px;
+  min-height: 44px;
+  padding: 8px 14px;
   transition: background 200ms var(--calm-ease);
 }
 
@@ -986,9 +1006,9 @@ pre {
   border-radius: 50%;
   color: var(--secondary);
   display: inline-flex;
-  height: 34px;
+  height: 44px;
   justify-content: center;
-  width: 34px;
+  width: 44px;
 }
 
 .leftComposerTools button:hover {
@@ -1010,9 +1030,9 @@ pre {
   color: var(--navy-black);
   display: flex;
   flex: 0 0 auto;
-  height: 39px;
+  height: 44px;
   justify-content: center;
-  width: 39px;
+  width: 44px;
 }
 
 .sendOrb:disabled {
@@ -2212,10 +2232,10 @@ pre {
 
 .themeToggle.compact {
   border-radius: 50%;
-  height: 32px;
+  height: 44px;
   justify-content: center;
   padding: 0;
-  width: 32px;
+  width: 44px;
 }
 
 .sandboxChip {

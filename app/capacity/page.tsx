@@ -23,8 +23,12 @@ function CapacityPageContent() {
   const [storage, setStorage] = useState<StorageHealth | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window === "undefined") return true;
-    const saved = window.localStorage.getItem("nomin-sidebar-collapsed");
-    return saved !== "1" && !(saved === null && window.innerWidth <= 720);
+    try {
+      const saved = window.localStorage.getItem("nomin-sidebar-collapsed");
+      return saved !== "1" && !(saved === null && window.innerWidth <= 720);
+    } catch {
+      return true;
+    }
   });
 
   const setSidebar = (open: boolean) => {

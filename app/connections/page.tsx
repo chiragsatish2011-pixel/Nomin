@@ -19,8 +19,12 @@ const PROVIDERS: Array<{ id: ConnectionProvider; name: string; description: stri
 function ConnectionsPageContent() {
   const [sidebarOpen, setSidebarOpenState] = useState(() => {
     if (typeof window === "undefined") return true;
-    const saved = localStorage.getItem("nomin-sidebar-collapsed");
-    return saved !== "1" && !(saved === null && window.innerWidth <= 720);
+    try {
+      const saved = localStorage.getItem("nomin-sidebar-collapsed");
+      return saved !== "1" && !(saved === null && window.innerWidth <= 720);
+    } catch {
+      return true;
+    }
   });
   const [provider, setProvider] = useState<ConnectionProvider>("openai");
   const [apiKey, setApiKey] = useState("");

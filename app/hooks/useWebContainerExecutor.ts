@@ -41,8 +41,12 @@ export type ExecutorState = ContainerStatus;
 // its promise. Do not let that silent client-side hang keep the server bridge
 // alive through heartbeats forever; return a typed result before the server's
 // own bridge timeout so the saved step can pause and resume cleanly.
+// Cold boot downloads the worker + mounts the seed + restores the checkpoint,
+// which routinely exceeds 30s on first load (see WebContainer issue #1806),
+// so the readiness budget must cover mount, not just worker spawn.
 const CLIENT_TOOL_TIMEOUT_MS = 35_000;
-const WORKSPACE_READY_TIMEOUT_MS = 25_000;
+const WORKSPACE_READY_TIMEOUT_MS = 60_000;
+const WORKSPACE_SNAPSHOT_TIMEOUT_MS = 15_000;
 
 async function withDeadline<T>(operation: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   let timer: number | undefined;
@@ -126,14 +130,34 @@ export function useWebContainerExecutor() {
    * commands retain their normal progress heartbeats while dependencies warm.
    */
   const prepareForExecution = useCallback(async (): Promise<string[]> => {
-    await withDeadline(
-      boot(),
-      WORKSPACE_READY_TIMEOUT_MS,
-      "The browser workspace did not become ready. Keep this tab open and retry the saved request.",
-    );
+    try {
+      await withDeadline(
+        boot(),
+        WORKSPACE_READY_TIMEOUT_MS,
+        "The browser workspace did not become ready. Keep this tab open and retry the saved request.",
+      );
+    } catch (bootTimeout) {
+      // Surface the underlying boot state instead of swallowing it: an early
+      // COOP/COEP or non-Chromium rejection looks identical to a slow cold
+      // boot unless the stored error + isolation state are included.
+      const { getWorkspaceState } = await import("@/app/lib/workspace-container");
+      const stored = getWorkspaceState();
+      const isolated =
+        typeof window !== "undefined" && typeof window.crossOriginIsolated === "boolean"
+          ? window.crossOriginIsolated
+          : null;
+      const detail = stored.error ? ` (${stored.error})` : "";
+      const isolationHint =
+        isolated === false
+          ? " The browser is not cross-origin isolated (COOP/COEP headers missing), so SharedArrayBuffer boot cannot succeed."
+          : "";
+      throw new Error(
+        `${bootTimeout instanceof Error ? bootTimeout.message : "The browser workspace did not become ready."}${detail}${isolationHint}`,
+      );
+    }
     return withDeadline(
       snapshot(),
-      8_000,
+      WORKSPACE_SNAPSHOT_TIMEOUT_MS,
       "The browser workspace opened, but its files did not become readable. Retry the saved request.",
     );
   }, []);

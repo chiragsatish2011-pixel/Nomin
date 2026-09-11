@@ -454,8 +454,12 @@ export default function Home() {
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
-    const saved = window.localStorage.getItem("nomin-sidebar-collapsed");
-    return saved === "1" || (saved === null && window.innerWidth <= 720);
+    try {
+      const saved = window.localStorage.getItem("nomin-sidebar-collapsed");
+      return saved === "1" || (saved === null && window.innerWidth <= 720);
+    } catch {
+      return false;
+    }
   });
   const [activeConnection, setActiveConnection] = useState<ByokConfig | null>(() => typeof window === "undefined" ? null : readConnection());
   const [message, setMessage] = useState("");
@@ -1854,12 +1858,13 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
                   </div>
 
                   {error ? (
-                    <div className="errorNote">
+                    <div className="errorNote" role="alert" aria-live="assertive">
                       <span>
                         {isBridgeError(error) ? (
                           <>
                             <strong>{failedTool?.toolName ? `Couldn’t complete ${failedTool.toolName.replace("_", " ")}.` : "Browser workspace unavailable."}</strong>{" "}
                             Keep this Trion tab open so the workspace can run it, then retry.
+                            {executor.bootError ? ` Details: ${executor.bootError}` : ""}
                           </>
                         ) : presentError(error)}
                       </span>

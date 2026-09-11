@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="3 2 34 41">
+  <defs>
+    <linearGradient id="nomin-bell" x1="8%" y1="82%" x2="91%" y2="8%">
+      <stop offset="0%" stop-color="#41207e"/>
+      <stop offset="48%" stop-color="#8562d5"/>
+      <stop offset="100%" stop-color="#54bfb5"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke="#281052" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 4.5 16.8 C 4.5 8.5 10.5 4.1 20 4.1 C 29.5 4.1 35.5 8.5 35.5 16.8 C 35.5 22.3 32.3 25.1 28.6 22.3 C 26.1 25.1 22.9 25.3 20 22.4 C 17.1 25.3 13.9 25.1 11.4 22.3 C 7.7 25.1 4.5 22.3 4.5 16.8 Z" fill="url(#nomin-bell)" stroke-width="1.45"/>
+    <g fill="#160b32" stroke="none"><circle cx="14.2" cy="15.2" r="2.45"/><circle cx="25.8" cy="15.2" r="2.45"/></g>
+  </g>
+</svg>

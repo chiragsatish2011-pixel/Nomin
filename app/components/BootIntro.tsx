@@ -7,8 +7,8 @@ type BootIntroProps = {
   onActiveChange: (active: boolean) => void;
 };
 
-const INTRO_DURATION_MS = 1_650;
-const REMOVE_DELAY_MS = 520;
+const INTRO_DURATION_MS = 1_100;
+const REMOVE_DELAY_MS = 420;
 
 /**
  * A compact brand entrance, not a video splash. It is deliberately local to a
@@ -89,7 +89,7 @@ export function BootIntro({ onActiveChange }: BootIntroProps) {
   if (!visible) return null;
 
   return (
-      <div className={revealing ? "bootIntro revealing" : "bootIntro"} aria-hidden={revealing}>
+      <div className={revealing ? "bootIntro revealing" : "bootIntro"} aria-hidden={revealing} role="status" aria-label="Loading Trion workspace">
       <div className="bootShader" aria-hidden="true" />
       <div className="bootCurrent bootCurrentOne" aria-hidden="true" />
       <div className="bootCurrent bootCurrentTwo" aria-hidden="true" />

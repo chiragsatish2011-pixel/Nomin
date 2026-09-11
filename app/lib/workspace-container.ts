@@ -131,6 +131,9 @@ export function boot(): Promise<WebContainer> {
   registerPageExitCleanup();
   emit({ status: "booting", error: null });
   bootPromise = (async () => {
+    if (typeof window !== "undefined" && typeof window.crossOriginIsolated === "boolean" && !window.crossOriginIsolated) {
+      throw new Error("Browser is not cross-origin isolated. WebContainer needs COOP: same-origin + COEP: require-corp for SharedArrayBuffer.");
+    }
     const { WebContainer } = await import("@webcontainer/api");
     const container = await WebContainer.boot({ coep: "require-corp", forwardPreviewErrors: "exceptions-only" });
 
