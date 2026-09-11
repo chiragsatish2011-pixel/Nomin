@@ -100,7 +100,27 @@ with fail-fast precise errors.
 - Live model/bridge journeys (15-item user-journey list) were NOT run — no
   provider budget was spent; guarded by unit coverage + build.
 
-## H. Remaining risks (not hidden)
+## H. Addendum — single-key NVIDIA lane + live verification (2026-09-11, later)
+
+- Runtime is now one key (`TRION_API_KEY`, gitignored `.env.local`) on
+  `https://integrate.api.nvidia.com/v1` with `TRION_MODEL_PRIMARY=
+  nvidia/nemotron-3-ultra-550b-a55b` and `TRION_MODEL_FAST=
+  nvidia/nemotron-3.5-lightning-30b-a3b` — both IDs verified live against
+  `/v1/models` + real completions. No Gemini lane configured, so every stage
+  routes `hosted` with no fallback ambiguity.
+- Trap found by live-testing: `TRION_API_KEY_1` alone (pool flags off) leaves
+  `hasConfig()` false — single-key setups must use `TRION_API_KEY`. Fixed the
+  `.env.example` wording that recommended the non-working form.
+- Robustness from measured free-tier variance (2 transient timeouts in ~10
+  live calls): classification degrades to heuristics on provider errors
+  (cancellation still rethrown); user-facing gates (classification,
+  direct_answer, synthesis, plan_only) get a second attempt — healthy path
+  still costs one request.
+- Live E2E through real `runTurn`: capability question → zero-provider reply;
+  chat → correct live answer; plan task → valid plan + honest synthesis.
+  **E2E_PASS.** Suite now 554 tests.
+
+## I. Remaining risks (not hidden)
 
 1. **State is process-local** (`globalThis` maps): safe for single-process
    dev/self-host; multi-instance deployment needs the store abstraction

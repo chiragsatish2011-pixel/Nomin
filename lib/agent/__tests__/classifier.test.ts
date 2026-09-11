@@ -272,3 +272,17 @@ describe("classifyIntent - heuristic activity selection", () => {
     expect(result.activity).toBe("thanking");
   });
 });
+
+describe("classifyIntent - provider outage fallback", () => {
+  it("routes a capability question to direct_answer when the model call fails", async () => {
+    (modelGateway.completeText as any).mockRejectedValueOnce(new Error("Trion request timed out."));
+    const result = await classifyIntent(createMockInput("wt can you do?"));
+    expect(result.intent).toBe("direct_answer");
+  });
+
+  it("routes clear work to task when the model call fails", async () => {
+    (modelGateway.completeText as any).mockRejectedValueOnce(new Error("Trion request failed with HTTP 500."));
+    const result = await classifyIntent(createMockInput("create a file named x.txt"));
+    expect(result.intent).toBe("task");
+  });
+});

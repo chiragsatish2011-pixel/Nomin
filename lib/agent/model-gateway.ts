@@ -61,12 +61,15 @@ export interface ModelOptions {
  * stricter than that default. See `callDeadlineMs` in internal-client.
  */
 export const CALL_RELIABILITY: Record<CallType, { timeoutMs: number; maxAttempts: number; deadlineMs?: number }> = {
-  classification: { timeoutMs: 15_000, maxAttempts: 1 },
-  direct_answer: { timeoutMs: 20_000, maxAttempts: 1 },
+  // User-facing gates get a second attempt: on shared free-tier capacity a
+  // single slow response is common (measured), and one retry rides through it
+  // without changing healthy-path cost (one request stays one request).
+  classification: { timeoutMs: 15_000, maxAttempts: 2 },
+  direct_answer: { timeoutMs: 20_000, maxAttempts: 2 },
   plan: { timeoutMs: 45_000, maxAttempts: 2 },
-  plan_only: { timeoutMs: 30_000, maxAttempts: 1 },
+  plan_only: { timeoutMs: 30_000, maxAttempts: 2 },
   execution_decision: { timeoutMs: 30_000, maxAttempts: 2 },
-  synthesis: { timeoutMs: 30_000, maxAttempts: 1 },
+  synthesis: { timeoutMs: 30_000, maxAttempts: 2 },
   synthesis_fallback: { timeoutMs: 20_000, maxAttempts: 1 },
   // Review roles run only after a substantial deliverable. Their prompts and
   // outputs are deliberately small, so a bounded single attempt is both less

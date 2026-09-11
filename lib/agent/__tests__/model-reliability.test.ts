@@ -6,8 +6,17 @@ describe("model-call reliability budgets", () => {
     expect(CALL_RELIABILITY.execution_decision).toEqual({ timeoutMs: 30_000, maxAttempts: 2 });
   });
 
-  it("keeps classification to one low-latency attempt", () => {
-    expect(CALL_RELIABILITY.classification).toEqual({ timeoutMs: 15_000, maxAttempts: 1 });
+  it("gives classification one retry to ride through free-tier variance", () => {
+    // Measured live: a single 15s attempt flakes on shared capacity often
+    // enough to fail every gated turn. The retry only fires on failure, so a
+    // healthy classification is still exactly one request.
+    expect(CALL_RELIABILITY.classification).toEqual({ timeoutMs: 15_000, maxAttempts: 2 });
+  });
+
+  it("gives user-facing synthesis calls one retry for the same reason", () => {
+    expect(CALL_RELIABILITY.direct_answer).toEqual({ timeoutMs: 20_000, maxAttempts: 2 });
+    expect(CALL_RELIABILITY.synthesis).toEqual({ timeoutMs: 30_000, maxAttempts: 2 });
+    expect(CALL_RELIABILITY.plan_only).toEqual({ timeoutMs: 30_000, maxAttempts: 2 });
   });
 
   it("never expands the normal-path RPM cost", () => {

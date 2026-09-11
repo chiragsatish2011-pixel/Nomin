@@ -4,6 +4,7 @@
 
 import type { NormalInput, IntentDoc } from "../types";
 import { modelGateway } from "../model-gateway";
+import { currentTurnSignal } from "../turn-control";
 import type { NimMessage } from "../types";
 import { toAgentStatus } from "../types";
 import { INTENT_SYSTEM_PROMPT } from "../static-prompts";
@@ -300,15 +301,22 @@ Use these established conventions to resolve implementation details when they an
   // on this prompt: 222 completion tokens of deliberation in front of a 19-token
   // answer, for an identical result — and the 150-token cap meant the reasoning
   // was crowding out the answer it was supposed to justify.
-  const raw = await modelGateway.completeText(messages, {
-    tier: "trion-1.4",
-    fast: true,
-    maxTokens: 150,
-    callType: "classification",
-    thinking: false,
-  });
-
+  //
+  // The call lives INSIDE the try on purpose: a provider outage must degrade to
+  // the heuristic fallback below, not abort the turn. Greetings, capability
+  // questions, and answerable questions keep working with no provider at all
+  // (their synthesis may still need one, and says so honestly if it fails).
+  // Cancellation is rethrown — a stopped turn must never be heuristically
+  // resurrected as a fresh intent.
   try {
+    const raw = await modelGateway.completeText(messages, {
+      tier: "trion-1.4",
+      fast: true,
+      maxTokens: 150,
+      callType: "classification",
+      thinking: false,
+    });
+
     const parsed = extractJsonObject(raw) as IntentDoc | null;
     if (!parsed) throw new Error("No JSON object in classifier response");
 
@@ -415,7 +423,10 @@ Use these established conventions to resolve implementation details when they an
       reason: parsed.reason,
       assumption,
     };
-  } catch {
+  } catch (error) {
+    // A stopped turn stays stopped: the ambient signal aborted this call, and
+    // guessing an intent for it would resurrect cancelled work as a new turn.
+    if (currentTurnSignal()?.aborted) throw error;
     // Fallback: keyword heuristic keeps the activity task-appropriate.
     // Task signals always win over question/greeting words ("can you fix X?").
     // Ambiguous conversational patterns should be needs_clarification, not direct_answer.
