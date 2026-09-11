@@ -168,20 +168,65 @@ export function planningFailureSynthesis(error?: Error): SynthesisDoc {
   const detail = error?.message ?? "";
   const capacityLimited = /shared model-request limit|rate limit|resourceexhausted|too many requests/i.test(detail);
   const missingProvider = /not configured in this environment/i.test(detail);
+  const keyRejected = /api key was rejected|HTTP 401|HTTP 403/i.test(detail);
+  const modelNotFound = /selected model or provider endpoint was not found|HTTP 404/i.test(detail);
   const timedOut = /timed out|timeout/i.test(detail);
+  const providerFailed = /could not complete this request|HTTP 5\d\d/i.test(detail);
+  const connectionProblem = keyRejected || modelNotFound;
   return {
     message: capacityLimited
       ? "Trion could not prepare the build plan because the shared service is temporarily busy. No build steps were started. Try again in about a minute."
       : missingProvider
         ? "Trion could not prepare the build plan because no model connection is configured. Add a connection in Settings, then start a new request."
-        : timedOut
-          ? "Trion could not prepare the build plan because the model service did not respond in time. No build steps were started; retry the request or use your own connection in Settings."
+        : keyRejected
+          ? "Trion could not prepare the build plan because the model connection rejected its key. No build steps were started. Check the connection in Settings, then start a new request."
+          : modelNotFound
+            ? "Trion could not prepare the build plan because the configured model or endpoint was not found. No build steps were started. Check the connection in Settings, then start a new request."
+            : timedOut
+              ? "Trion could not prepare the build plan because the model service did not respond in time. No build steps were started; retry the request or use your own connection in Settings."
+              : providerFailed
+                ? "Trion could not prepare the build plan because the model provider failed the request. No build steps were started. Retry in a moment, or use your own connection in Settings."
       : "Trion could not prepare the build plan, so no project work was started. Try again to create a fresh plan.",
-    next_action_hint: missingProvider
+    next_action_hint: missingProvider || connectionProblem
       ? "Open Settings → Connections and activate a model connection, then start a new request."
-      : timedOut
+      : timedOut || providerFailed
         ? "Retry once, or open Settings → Connections to use your own model provider."
         : "Retry planning; there are no partial project changes to recover.",
+  };
+}
+
+/** A conversational turn that cannot be composed is NOT a planning failure: no
+ * plan was ever attempted, so the "build plan" recovery copy would misdescribe
+ * the stage. Same failure classes, chat-accurate wording, fully deterministic
+ * (no model call — the model is what just failed). */
+export function answerFailureSynthesis(error?: Error): SynthesisDoc {
+  const detail = error?.message ?? "";
+  const capacityLimited = /shared model-request limit|rate limit|resourceexhausted|too many requests/i.test(detail);
+  const missingProvider = /not configured in this environment/i.test(detail);
+  const keyRejected = /api key was rejected|HTTP 401|HTTP 403/i.test(detail);
+  const modelNotFound = /selected model or provider endpoint was not found|HTTP 404/i.test(detail);
+  const timedOut = /timed out|timeout/i.test(detail);
+  const providerFailed = /could not complete this request|HTTP 5\d\d/i.test(detail);
+  const connectionProblem = missingProvider || keyRejected || modelNotFound;
+  return {
+    message: capacityLimited
+      ? "Trion couldn’t compose a reply because the shared service is temporarily busy. Try again in about a minute."
+      : missingProvider
+        ? "Trion couldn’t compose a reply because no model connection is configured. Add a connection in Settings, then ask again."
+        : keyRejected
+          ? "Trion couldn’t compose a reply because the model connection rejected its key. Check the connection in Settings, then ask again."
+          : modelNotFound
+            ? "Trion couldn’t compose a reply because the configured model or endpoint was not found. Check the connection in Settings, then ask again."
+            : timedOut
+              ? "Trion couldn’t compose a reply because the model service did not respond in time. Ask again, or use your own connection in Settings."
+              : providerFailed
+                ? "Trion couldn’t compose a reply because the model provider failed the request. Ask again in a moment, or use your own connection in Settings."
+      : "Trion couldn’t compose a reply to that just now. Ask again to get a fresh answer.",
+    next_action_hint: connectionProblem
+      ? "Open Settings → Connections and activate a model connection, then ask again."
+      : timedOut || providerFailed
+        ? "Ask again, or open Settings → Connections to use your own model provider."
+        : "Ask again; nothing was started that needs recovering.",
   };
 }
 

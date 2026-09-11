@@ -22,7 +22,7 @@ type PlanStepState = PlanStep["state"];
 import { classifyIntent, isDefinitelyTask } from "../intent/classifier";
 import { generatePlanDoc, emitPlan, withStatedAssumption } from "../planner/generator";
 import { executeSteps } from "../executor/step-runner";
-import { pausedTaskSynthesis, planningFailureSynthesis, synthesizeResult, synthesizeDirectAnswer, synthesizePlanOnly } from "../synthesis/generator";
+import { pausedTaskSynthesis, planningFailureSynthesis, answerFailureSynthesis, synthesizeResult, synthesizeDirectAnswer, synthesizePlanOnly } from "../synthesis/generator";
 import { buildFinalOutput } from "../output/builder";
 import { normalizeInput } from "../input";
 import { getOrCreateSession, appendTurn, getPendingExecution, getTaskState, hydrateHistoryIfEmpty, setPendingExecution, setTaskState } from "../session-store";
@@ -410,7 +410,25 @@ async function runTurnInner(
       // long build is very often a RECALL question ("what did I ask you to
       // build?", "which files have you changed?"), and answering that from a
       // six-turn transcript window is exactly the memory failure this replaces.
-      const synthesis = await synthesizeDirectAnswer(conversationalInput, renderTaskState(taskState));
+      let synthesis;
+      try {
+        synthesis = await synthesizeDirectAnswer(conversationalInput, renderTaskState(taskState));
+      } catch (synthesisError) {
+        // Cancellation must keep propagating to the outer handler — answering
+        // a stopped turn deterministically would resurrect it as a result.
+        if (synthesisError instanceof TurnCancelledError || signal?.aborted) throw synthesisError;
+        // A reply that cannot be composed is NOT a planning failure: no plan
+        // was ever attempted, so the "build plan" recovery copy would lie
+        // about the stage. Answer deterministically from the failure class —
+        // the model is what just failed, so no second model call is attempted.
+        const failure = answerFailureSynthesis(synthesisError instanceof Error ? synthesisError : new Error(String(synthesisError)));
+        timingLog("T4_direct_answer_failed", t0);
+        const output = buildFinalOutput(failure, null, [], [], "error");
+        appendTurn(ctx.sessionId, { role: "assistant", content: failure.message });
+        emitOutput(emit, output);
+        emit({ type: "result", data: output });
+        return output;
+      }
       throwIfTurnCancelled(signal);
       timingLog("T4_direct_answer_synthesis_done", t0);
       const output = buildFinalOutput(synthesis, null, [], [], "done");

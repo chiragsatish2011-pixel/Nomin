@@ -38,4 +38,20 @@ describe("directFastReply", () => {
   it("keeps casual chat from being mistaken for an answer to an old task question", () => {
     expect(directFastReply("nothing just chat")).toBe("Of course — what would you like to talk about?");
   });
+
+  it.each([
+    "wt can you do?",
+    "what can you do",
+    "What can u do?",
+    "what are your capabilities?",
+    "show me what you can do",
+  ])("answers a bare capability question with zero provider calls: %s", (input) => {
+    expect(directFastReply(input)).toMatch(/plan and build software projects/i);
+  });
+
+  it("leaves contextual capability questions to the full pipeline", () => {
+    expect(directFastReply("what can we do")).toBeNull();
+    expect(directFastReply("what can you build with React?")).toBeNull();
+    expect(directFastReply("what can you do with this file?")).toBeNull();
+  });
 });
