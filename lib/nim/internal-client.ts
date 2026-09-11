@@ -12,6 +12,23 @@ export type NimMessage = {
   content: string;
 };
 
+/** A single OpenAI-shaped function tool definition, passed through verbatim. */
+export type ProviderTool = {
+  type: "function";
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+    strict?: boolean;
+  };
+};
+
+export type ProviderToolChoice =
+  | { type: "function"; function: { name: string } }
+  | "auto"
+  | "none"
+  | "required";
+
 /** Provider-reported token accounting for one completion. Passed back to the
  *  gateway so the agent layer can attribute real cost per call type — the
  *  char/4 estimate cannot see completion tokens at all, and a reasoning model
@@ -91,6 +108,12 @@ export type CompletionOptions = {
   route?: "hosted" | "gemini";
   onRoute?: (route: "hosted" | "gemini") => void;
   onFallback?: (from: "hosted" | "gemini", to: "hosted" | "gemini") => void;
+  /** OpenAI-shaped function-calling passthrough. Sent verbatim on the
+   *  OpenAI-compatible route only (hosted NIM plus OpenAI-shaped BYOK);
+   *  ignored on the Gemini/Anthropic routes, which use different tool
+   *  schemas. Absent by default so existing calls are byte-identical. */
+  tools?: ProviderTool[];
+  toolChoice?: ProviderToolChoice;
 };
 
 /** A single dispatch attempt. Retries re-enter the queue as a NEW attempt of the
@@ -1029,7 +1052,12 @@ async function callProviderText(
         // measure a before/after against unmodified behaviour.
         ...(!byok && typeof opts.thinking === "boolean"
           ? { chat_template_kwargs: { thinking: opts.thinking } }
-          : {})
+          : {}),
+        // Function-calling passthrough for the OpenAI-compatible route only.
+        // Same omit-when-absent rule: existing callers send byte-identical
+        // bodies, and the Gemini/Anthropic branches above are untouched.
+        ...(opts.tools ? { tools: opts.tools } : {}),
+        ...(opts.toolChoice !== undefined ? { tool_choice: opts.toolChoice } : {}),
       })
       }
     );
@@ -1042,7 +1070,17 @@ async function callProviderText(
     }
 
     const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+      choices?: Array<{
+        message?: {
+          content?: string;
+          tool_calls?: Array<{
+            id?: string;
+            type?: string;
+            function?: { name?: string; arguments?: string };
+          }>;
+        };
+        finish_reason?: string;
+      }>;
       content?: Array<{ type?: string; text?: string }>;
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
         usage?: {
@@ -1083,9 +1121,20 @@ async function callProviderText(
       throw new Error("Trion response reached its output limit before the file was complete.");
     }
 
+    const message = data.choices?.[0]?.message;
+    // A tool_choice call typically comes back with empty content and the
+    // payload in tool_calls. Serialize those calls as the text result so a
+    // function-calling turn has something to parse; without this every
+    // tool_choice response would die here as "empty response". Plain-text
+    // turns are unaffected: they never carry tool_calls.
+    const toolCallText = message?.tool_calls?.length
+      ? JSON.stringify(
+          message.tool_calls.map((call) => ({ name: call.function?.name, arguments: call.function?.arguments })),
+        )
+      : undefined;
     const content = useGemini
       ? data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("").trim()
-      : anthropic ? data.content?.find((entry) => entry.type === "text")?.text : data.choices?.[0]?.message?.content;
+      : anthropic ? data.content?.find((entry) => entry.type === "text")?.text : (message?.content || toolCallText);
     if (!content) throw new Error("Trion returned an empty response.");
     return content;
   } catch (error) {
