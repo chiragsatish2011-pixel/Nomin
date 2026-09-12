@@ -5,6 +5,7 @@ import type { AgentTurn, NimMessage, TrionTier } from "./types";
 import { queuedCompletion, queuedTextCompletion } from "@/lib/nim/internal-client";
 import { sanitize, sanitizeToolInput, assertNoLeaks } from "./sanitize";
 import { perf, estTokensOf } from "./perf";
+import { takeBudgetSlot, type TurnBudget } from "./turn-budget";
 import { STATIC_SYSTEM_PROMPTS } from "./static-prompts";
 import { recordUsage, type CallType } from "./token-ledger";
 
@@ -43,6 +44,10 @@ export interface ModelOptions {
    * the browser, so provider identity never becomes user-facing content. */
   onRoute?: (route: "hosted" | "gemini") => void;
   onFallback?: (from: "hosted" | "gemini", to: "hosted" | "gemini") => void;
+  /** Per-turn call budget. Counted at gateway entry, so every stage, retry,
+   *  repair, and review chain draws from the same allowance. Absent means
+   *  unenforced (bench/offline contexts). */
+  budget?: TurnBudget;
 }
 
 /**
@@ -250,6 +255,7 @@ export const modelGateway = {
     const messages = enforceInputBudget(rawMessages, opts.callType ?? "execution_decision");
 
     const callType = opts.callType ?? "execution_decision";
+    takeBudgetSlot(opts.budget, callType);
     const reliability = opts.reliability ?? CALL_RELIABILITY[callType];
     const start = Date.now();
     const raw = await queuedCompletion(messages, maxTokens, {
@@ -292,6 +298,7 @@ export const modelGateway = {
     const messages = enforceInputBudget(rawMessages, opts.callType ?? "synthesis");
 
     const callType = opts.callType ?? "synthesis";
+    takeBudgetSlot(opts.budget, callType);
     const reliability = opts.reliability ?? CALL_RELIABILITY[callType];
     const start = Date.now();
     const raw = await queuedTextCompletion(messages, maxTokens, {

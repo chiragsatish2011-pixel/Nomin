@@ -85,6 +85,7 @@ export async function reviewCodingCompletion(args: {
       maxTokens: 900,
       callType: "coding_synthesizer",
       thinking: false,
+      budget: args.input.budget,
     });
     const result = parseSynthesis(raw);
     return { result: result ?? qualifiedFallback(args.proposed, critic), critic };
@@ -125,6 +126,7 @@ export async function runDesignCritic(args: {
       maxTokens: 700,
       callType: args.recheck ? "design_recheck" : "design_critic",
       thinking: false,
+      budget: args.input.budget,
     });
     return parseDesignReview(raw) ?? { verdict: "pass", violations: [], revision_brief: "" };
   } catch {
@@ -169,6 +171,7 @@ export async function proposeDesignRevision(args: {
       maxTokens: 2_200,
       callType: "design_synthesizer",
       thinking: false,
+      budget: args.input.budget,
       // The critic supplies a short, concrete rewrite brief. The focused
       // writer completes reliably within the review window; its output is
       // never trusted without the targeted critic re-check that follows.
@@ -218,6 +221,7 @@ export async function runCodingCritic(args: {
       maxTokens: 600,
       callType: "coding_critic",
       thinking: false,
+      budget: args.input.budget,
     });
     return parseCodingReview(raw) ?? deterministicCodingReview(args);
   } catch {

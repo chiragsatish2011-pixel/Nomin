@@ -191,6 +191,7 @@ export async function executeSteps(
               callType: "execution_decision",
               thinking: false,
               fast: false,
+              budget: input.budget,
               allowTruncated: /\.(?:css|scss|sass|less)$/i.test(directWritePath),
               reliability: authoringReliability,
               // Full-file authoring is the longest call in the turn. Without the
@@ -263,6 +264,7 @@ export async function executeSteps(
               callType: "execution_decision",
               thinking,
               fast: canUseFastTier(step, gate),
+              budget: input.budget,
               reliability: authoringReliability,
               signal,
               onRoute: (route) => { providerPath = route; },
@@ -297,6 +299,7 @@ export async function executeSteps(
           callType: "execution_decision",
           thinking,
           fast: canUseFastTier(step, gate),
+          budget: input.budget,
           reliability: authoringReliability,
           signal,
           onRoute: (route) => { providerPath = route; },

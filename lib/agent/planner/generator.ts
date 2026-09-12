@@ -79,6 +79,7 @@ export async function generatePlanDoc(input: NormalInput): Promise<PlanDoc> {
     maxTokens: 900,
     callType: "plan" as const,
     thinking: false,
+    budget: input.budget,
     // The configured primary route did not return even a 64-token health
     // response within 70 seconds. Planning is a compact structured contract,
     // while actual source authoring remains on the capable local build worker.

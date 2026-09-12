@@ -22,7 +22,7 @@ type PlanStepState = PlanStep["state"];
 import { classifyIntent, isDefinitelyTask } from "../intent/classifier";
 import { generatePlanDoc, emitPlan, withStatedAssumption } from "../planner/generator";
 import { executeSteps } from "../executor/step-runner";
-import { pausedTaskSynthesis, planningFailureSynthesis, answerFailureSynthesis, synthesizeResult, synthesizeDirectAnswer, synthesizePlanOnly } from "../synthesis/generator";
+import { pausedTaskSynthesis, planningFailureSynthesis, answerFailureSynthesis, synthesizeResult, synthesizeDirectAnswer, synthesizePlanOnly, budgetExceededSynthesis } from "../synthesis/generator";
 import { buildFinalOutput } from "../output/builder";
 import { normalizeInput } from "../input";
 import { getOrCreateSession, appendTurn, getPendingExecution, getSessionCount, getTaskState, hydrateHistoryIfEmpty, rehydratePendingExecution, serverUptimeS, setPendingExecution, setTaskState } from "../session-store";
@@ -40,6 +40,7 @@ import {
 } from "../task-state";
 import { awaitPlanApproval, hashPlan } from "../execution/bridge";
 import { toPendingExecution, type ClientCheckpoint } from "../resume-checkpoint";
+import { createTurnBudget, TurnBudgetExceeded } from "../turn-budget";
 import { planNeedsApproval } from "../approval";
 import { sanitize as sanitizeError } from "../sanitize";
 import { buildClarificationOutput, toClarificationQuestion } from "../clarification";
@@ -293,6 +294,9 @@ async function runTurnInner(
     );
     throwIfTurnCancelled(signal);
     timingLog("T1_step0_normalizeInput_done", t0, { files: ctx.input.workspace_snapshot.file_tree.length, historyTurns: ctx.input.conversation_history.length });
+    // One allowance for the whole turn, drawn down by every gateway call
+    // regardless of stage. Absent only in offline contexts, which never run here.
+    ctx.input.budget = createTurnBudget();
     perf("step0.normalizeInput", Date.now() - step0Start, {
       files: ctx.input.workspace_snapshot.file_tree.length,
       historyTurns: ctx.input.conversation_history.length,
@@ -711,6 +715,16 @@ async function runTurnInner(
       return finishCancelled(ctx, emit);
     }
     const raw = err instanceof Error ? err : new Error(String(err));
+    // A blown turn budget short-circuits before any error synthesis: the
+    // budget message is deterministic and any further model call would throw
+    // the same error again. Log the full breakdown here — the synthesis copy
+    // stays calm while the server log keeps the evidence.
+    const budgetBlown = raw instanceof TurnBudgetExceeded ? raw : null;
+    if (budgetBlown) {
+      const detail = { session: ctx.sessionId, total: budgetBlown.total, byCallType: budgetBlown.byCallType };
+      perf("turn.budgetExceeded", 0, detail);
+      console.warn(`[trion] turn.budgetExceeded session=${ctx.sessionId} total=${budgetBlown.total} ${Object.entries(budgetBlown.byCallType).map(([callType, count]) => `${callType}x${count}`).join(" ")}`);
+    }
     // Sanitize at the boundary. The raw message can carry the upstream provider
     // name (an HTTP error body quotes the model id verbatim), and every path
     // below puts it in front of the user.
@@ -726,9 +740,11 @@ async function runTurnInner(
       // isn't one, and calling through with `null` threw a second time.
       if (!ctx.input) throw ctx.error;
       timingLog("T4_error_synthesis_start", t0);
-      const synthesis = ctx.plan
-        ? await synthesizeResult(ctx.input, ctx.toolTrace, ctx.plan, ctx.error ?? undefined)
-        : planningFailureSynthesis(ctx.error);
+      const synthesis = budgetBlown
+        ? budgetExceededSynthesis()
+        : ctx.plan
+          ? await synthesizeResult(ctx.input, ctx.toolTrace, ctx.plan, ctx.error ?? undefined)
+          : planningFailureSynthesis(ctx.error);
       timingLog("T4_error_synthesis_done", t0);
       const output = buildFinalOutput(synthesis, ctx.plan, ctx.toolTrace, ctx.artifacts, "error", ctx.stepStates);
 
@@ -743,9 +759,11 @@ async function runTurnInner(
       return output;
     } catch {
       // Fallback error output if synthesis fails
-      const fallbackSynthesis = ctx.plan
-        ? pausedTaskSynthesis(ctx.toolTrace, ctx.error)
-        : planningFailureSynthesis(ctx.error);
+      const fallbackSynthesis = budgetBlown
+        ? budgetExceededSynthesis()
+        : ctx.plan
+          ? pausedTaskSynthesis(ctx.toolTrace, ctx.error)
+          : planningFailureSynthesis(ctx.error);
       const fallbackOutput: AgentOutput = {
         message: fallbackSynthesis.message,
         status: "error",

@@ -315,6 +315,7 @@ Use these established conventions to resolve implementation details when they an
       maxTokens: 150,
       callType: "classification",
       thinking: false,
+      budget: input.budget,
     });
 
     const parsed = extractJsonObject(raw) as IntentDoc | null;

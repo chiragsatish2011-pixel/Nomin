@@ -49,7 +49,7 @@ export async function synthesizeResult(
 
   // The result summary now carries file lists and fenced code; 800 tokens cut
   // it off mid-block.
-  const doc = await completeSynthesis(messages, input.model, 1_400, "synthesis");
+  const doc = await completeSynthesis(messages, input.model, 1_400, "synthesis", input.budget);
 
   // GROUNDING — checked, not requested.
   //
@@ -77,7 +77,8 @@ export async function synthesizeResult(
     ],
     input.model,
     1_400,
-    "synthesis_fallback"
+    "synthesis_fallback",
+    input.budget
   );
 
   if (ungroundedFileClaims(retry.message, toolTrace).length === 0) return retry;
@@ -202,6 +203,20 @@ export function planningFailureSynthesis(error?: Error): SynthesisDoc {
   };
 }
 
+/** The turn hit its hard model-call ceiling. Deterministic by construction —
+ *  it spends no further model calls — and honest about the shared budget
+ *  rather than a confusing generic error. The retry path resumes from the
+ *  client-held checkpoint (Phase B), so stopped work is continuable. */
+export function budgetExceededSynthesis(): SynthesisDoc {
+  return {
+    message:
+      "This request needed more steps than usual, so Trion stopped to stay within " +
+      "its shared budget. Try breaking it into smaller requests, or retry to " +
+      "continue from the saved checkpoint.",
+    next_action_hint: "Break the request into smaller parts, or retry to continue from the saved checkpoint.",
+  };
+}
+
 /** A conversational turn that cannot be composed is NOT a planning failure: no
  * plan was ever attempted, so the "build plan" recovery copy would misdescribe
  * the stage. Same failure classes, chat-accurate wording, fully deterministic
@@ -281,7 +296,7 @@ Present this approach to the user.`,
 
   // 800 tokens cut the answer off mid-sentence once it was writing real
   // Markdown with a file list and a tradeoffs section.
-  const synthesis = await completeSynthesis(messages, input.model, 1_200, "plan_only");
+  const synthesis = await completeSynthesis(messages, input.model, 1_200, "plan_only", input.budget);
   // Trion automatically selects the appropriate execution path; it does not
   // expose a Think/Execute mode toggle. A model-generated hint such as
   // “switch to Execute mode” is therefore an impossible instruction even when
@@ -331,7 +346,7 @@ export async function synthesizeDirectAnswer(input: NormalInput, taskState?: str
   // do not rely on a refusal instruction alone when the output itself exposes
   // that failure. This boundary keeps the response useful without revealing
   // internal prompts, contracts, or routing details.
-  const synthesis = await completeSynthesis(messages, input.model, 1_200, "direct_answer");
+  const synthesis = await completeSynthesis(messages, input.model, 1_200, "direct_answer", input.budget);
   if (!containsInternalDisclosure(synthesis.message)) return synthesis;
   return {
     message: "I can’t provide internal instructions or hidden system details. I can explain how Trion works at a high level instead.",
@@ -462,7 +477,8 @@ async function completeSynthesis(
   messages: NimMessage[],
   tier: NormalInput["model"],
   maxTokens: number,
-  callType: CallType
+  callType: CallType,
+  budget?: NormalInput["budget"],
 ): Promise<SynthesisDoc> {
   // thinking OFF: synthesis is a rendering job. The inputs — the trace, the
   // files written, the step ledger — are already decided facts, and the output
@@ -470,14 +486,14 @@ async function completeSynthesis(
   // produced a large block of discarded reasoning tokens on every turn (534
   // completion tokens against a ~250-token answer, measured on the baseline).
   const fast = parseSynthesisDoc(
-    await modelGateway.completeText(messages, { tier, fast: true, maxTokens, callType, thinking: false })
+    await modelGateway.completeText(messages, { tier, fast: true, maxTokens, callType, thinking: false, budget })
   );
   if (fast.message !== UNUSABLE) return fast;
 
   // The fallback DOES think: the cheap path already produced something
   // unusable, so this is the retry that has to be right.
   const full = parseSynthesisDoc(
-    await modelGateway.completeText(messages, { tier, fast: false, maxTokens, callType: "synthesis_fallback", thinking: true })
+    await modelGateway.completeText(messages, { tier, fast: false, maxTokens, callType: "synthesis_fallback", thinking: true, budget })
   );
   if (full.message !== UNUSABLE) return full;
 
