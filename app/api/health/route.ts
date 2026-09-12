@@ -10,6 +10,14 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     service: "trion-web",
+    // Deploy marker: Vercel injects VERCEL_GIT_COMMIT_SHA at build time.
+    // Compare against git HEAD to rule out stale-bundle incidents before
+    // debugging behavior that "should already be fixed".
+    commit: process.env.VERCEL_GIT_COMMIT_SHA ?? "dev",
+    // Static pipeline marker: present only in bundles containing the
+    // tool_choice plan path. If a deployed /health lacks this key, the
+    // deployment predates Task 4 no matter what the dashboard claims.
+    planPipeline: "tool_choice/plan_tools",
     modelProviderConfigured: hasConfig(),
     sessions: getSessionCount(),
     modelQueueDepth: getQueueDepth(),

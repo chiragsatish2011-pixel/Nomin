@@ -164,6 +164,11 @@ export async function generatePlanDoc(
   // build lane when configured, but only the hosted Nemotron route honors
   // function calling — which is the entire point of this call. Same budgets
   // and priority as plan; only the lane and the structure enforcement differ.
+  //
+  // lane captures the serving route via onRoute so the parse-failed log below
+  // proves from prod logs which lane actually ran — a stale bundle or a
+  // misconfigured lane would otherwise be invisible.
+  let lane: string | null = null;
   const gatewayOpts = {
     tier: tierForRole(input.model, "planner"),
     maxTokens: 900,
@@ -178,6 +183,9 @@ export async function generatePlanDoc(
     // Use the healthy fast hosted route here; deterministic schema, scope and
     // verification guards still validate its plan before execution.
     fast: true,
+    onRoute: (route: "hosted" | "gemini") => {
+      lane = route;
+    },
   };
   // Bounded by counter, not by convention: if the model keeps answering in
   // prose despite the repair instruction, the second PlanParseError propagates
@@ -197,16 +205,25 @@ export async function generatePlanDoc(
       // Log HERE, with the raw payload in scope. The state-machine catch site
       // only keeps the first 100 chars of the sanitized message, so anything
       // logged there cannot diagnose a parse failure. Server logs only — the
-      // raw reply never reaches the browser.
+      // raw reply never reaches the browser. lane/tier/toolsSent/envelope
+      // answer "which code path actually executed": a stale bundle predating
+      // tool_choice, a Gemini-lane misroute, or a model ignoring tools each
+      // leave a distinct signature here.
+      const envelopeSeen = raw.trimStart().startsWith("[");
       perf("plan.parseFailed", 0, {
         attempt,
         stage: error.stage,
         rawChars: error.rawChars,
         candidatePairs: error.candidatePairs,
+        lane: lane ?? "unknown",
+        tier: gatewayOpts.tier,
+        toolsSent: true,
+        envelopeSeen,
       });
       console.warn(
         `[trion] plan parse attempt ${attempt}/${MAX_PLAN_PARSE_ATTEMPTS} failed ` +
-          `(stage=${error.stage}, ${error.candidatePairs} candidate pairs in ${error.rawChars} chars). ` +
+          `(stage=${error.stage}, ${error.candidatePairs} candidate pairs in ${error.rawChars} chars, ` +
+          `lane=${lane ?? "unknown"}, tier=${gatewayOpts.tier}, toolsSent=true, envelopeSeen=${envelopeSeen}). ` +
           `Raw reply (truncated): ${raw.slice(0, 4000)}`,
       );
       lastError = error;

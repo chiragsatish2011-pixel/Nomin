@@ -100,6 +100,27 @@ describe("generatePlanDoc sends tool_choice on the hosted lane", () => {
     expect(plan.steps.length).toBe(2);
     expect(gateway).toHaveBeenCalledTimes(2);
   });
+
+  it("logs lane, tools-sent, and envelope signature on parse failure", async () => {
+    const warned: string[] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warned.push(args.map(String).join(" "));
+    };
+    try {
+      gateway.mockResolvedValueOnce(envelope("not json at all {{{")).mockResolvedValueOnce(envelope(GOOD_ARGS));
+      await generatePlanDoc(testInput());
+    } finally {
+      console.warn = original;
+    }
+    const line = warned.find((entry) => entry.includes("plan parse attempt"));
+    expect(line).toMatch(/lane=unknown/);
+    expect(line).toMatch(/tier=trion-1\.4/);
+    expect(line).toMatch(/toolsSent=true/);
+    // The raw reply opened with `[`: the provider attempted a tool call, so
+    // this failure is malformed-arguments, not ignored-tools.
+    expect(line).toMatch(/envelopeSeen=true/);
+  });
 });
 
 describe("plan_tools routing stays on the hosted function-calling lane", () => {
