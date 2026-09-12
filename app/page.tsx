@@ -137,7 +137,7 @@ type TurnEntry = {
 
 type ProgressUpdate = {
   id: string;
-  stage: "plan" | "paused" | "complete" | "notice";
+  stage: "plan" | "paused" | "complete" | "notice" | "working";
   message: string;
   at: number;
 };
@@ -550,6 +550,10 @@ export default function Home() {
   const [agentState, setAgentState] = useState<AgentState>("complete");
 
   const [busy, setBusy] = useState(false);
+  /** Shown after a few seconds of continuous work so free-tier slowness reads
+   *  as expected, not frozen. Calm copy only — no internals, no model names. */
+  const [slowNotice, setSlowNotice] = useState(false);
+  const slowNoticeTimer = useRef<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [allowanceDismissed, setAllowanceDismissed] = useState(false);
   // Match BootIntro's first render. This avoids kicking off landing animations
@@ -793,6 +797,9 @@ export default function Home() {
     setPhase("Ready");
     setAgentState("complete");
     setBusy(false);
+    if (slowNoticeTimer.current !== null) window.clearTimeout(slowNoticeTimer.current);
+    slowNoticeTimer.current = null;
+    setSlowNotice(false);
     setApprovalPending(false);
     setApprovalPlan(null);
     approvalHashRef.current = null;
@@ -895,6 +902,9 @@ export default function Home() {
     // user queued is dropped too: firing a stale follow-up after an explicit
     // Stop is never what was asked for.
     setBusy(false);
+    if (slowNoticeTimer.current !== null) window.clearTimeout(slowNoticeTimer.current);
+    slowNoticeTimer.current = null;
+    setSlowNotice(false);
     setApprovalPending(false);
     setApprovalPlan(null);
     approvalHashRef.current = null;
@@ -1056,6 +1066,11 @@ export default function Home() {
   async function sendTurn(submitted: string, resume = false) {
     performance.mark("trion.submit.start");
     setBusy(true);
+    // Free-tier turns routinely take 30s+. If nothing has resolved after 5s,
+    // say so plainly instead of leaving a bare spinner.
+    setSlowNotice(false);
+    if (slowNoticeTimer.current !== null) window.clearTimeout(slowNoticeTimer.current);
+    slowNoticeTimer.current = window.setTimeout(() => setSlowNotice(true), 5_000);
     setAllowanceDismissed(false);
     setError(null);
     setOutputs([]);
@@ -1232,6 +1247,9 @@ export default function Home() {
       if (activeRequestRef.current === requestId) {
         if (abortRef.current === controller) abortRef.current = null;
         setBusy(false);
+        if (slowNoticeTimer.current !== null) window.clearTimeout(slowNoticeTimer.current);
+        slowNoticeTimer.current = null;
+        setSlowNotice(false);
         drainQueue();
       }
     }
@@ -2268,6 +2286,9 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
                   </button>
                 )}
               </div>
+              {busy && slowNotice ? (
+                <p className="slowNotice" role="status">Still working — this can take up to a minute on the shared service.</p>
+              ) : null}
             </div>
           </div>
         </div>

@@ -384,7 +384,9 @@ async function runTurnInner(
     // sequential model call from the critical path; on every other turn nothing
     // speculative is started, so nothing is wasted.
     const speculativePlan = isDefinitelyTask(ctx.input)
-      ? generatePlanDoc(ctx.input).then(
+      ? generatePlanDoc(ctx.input, {
+          onParseRetry: () => emit({ type: "progress", stage: "plan", message: "Refining the plan…" }),
+        }).then(
           (plan) => ({ ok: true as const, plan }),
           (error: unknown) => ({ ok: false as const, error }),
         )
@@ -499,7 +501,9 @@ async function runTurnInner(
       if (!speculative.ok) throw speculative.error;
       generatedPlan = speculative.plan;
     } else {
-      generatedPlan = await generatePlanDoc(ctx.input);
+      generatedPlan = await generatePlanDoc(ctx.input, {
+        onParseRetry: () => emit({ type: "progress", stage: "plan", message: "Refining the plan…" }),
+      });
     }
     ctx.plan = withStatedAssumption(generatedPlan, intent.assumption);
     throwIfTurnCancelled(signal);
@@ -666,7 +670,9 @@ async function runTurnInner(
     emit({ type: "status", status: "synthesizing" });
     timingLog("T4_synthesis_start", t0);
     const step4Start = Date.now();
-    let synthesis = await synthesizeResult(ctx.input, ctx.toolTrace, ctx.plan, ctx.error ?? undefined, renderTaskState(taskState), verification);
+    let synthesis = await synthesizeResult(ctx.input, ctx.toolTrace, ctx.plan, ctx.error ?? undefined, renderTaskState(taskState), verification, {
+      onSynthesisRetry: () => emit({ type: "progress", stage: "working", message: "Double-checking the summary…" }),
+    });
     // High-stakes completion review is deliberately narrow: it happens only
     // after a real multi-file coding run with successful verification. Direct
     // answers, plan-only turns, simple edits, and failures never pay for it.

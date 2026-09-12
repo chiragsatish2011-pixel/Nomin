@@ -54,7 +54,10 @@ const PLAN_REPAIR_PROMPT =
  *  with intent classification, and only announce the plan once the intent is
  *  confirmed to be a task. A plan streamed for a turn that turns out to be
  *  conversational would put a phantom plan node in the trace. */
-export async function generatePlanDoc(input: NormalInput): Promise<PlanDoc> {
+export async function generatePlanDoc(
+  input: NormalInput,
+  hooks?: { onParseRetry?: () => void },
+): Promise<PlanDoc> {
   const messages: NimMessage[] = [
     { role: "system", content: PLAN_SYSTEM_PROMPT },
     { role: "user", content: buildPlanUserPrompt(input) },
@@ -115,6 +118,10 @@ export async function generatePlanDoc(input: NormalInput): Promise<PlanDoc> {
           `Raw reply (truncated): ${raw.slice(0, 4000)}`,
       );
       lastError = error;
+      // Surface the retry so the progress view reads as active work, not a
+      // stall: the first attempt produced prose instead of a plan and the
+      // same gateway path is now re-asking for JSON only.
+      hooks?.onParseRetry?.();
       pendingMessages = [...messages, { role: "user", content: PLAN_REPAIR_PROMPT }];
     }
   }

@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { generatePlanDoc, parsePlanDoc, PlanParseError } from "../planner/generator";
 import { modelGateway } from "../model-gateway";
-import { planningFailureSynthesis } from "../synthesis/generator";
+import { planningFailureSynthesis, synthesizeResult } from "../synthesis/generator";
 import type { NormalInput } from "../types";
 
 vi.mock("../model-gateway", () => {
@@ -105,6 +105,20 @@ describe("generatePlanDoc repair retry", () => {
     await expect(generatePlanDoc(testInput())).rejects.toThrow(/timed out/);
     expect(gateway).toHaveBeenCalledTimes(1);
   });
+
+  it("notifies the retry hook so progress reads as active, not stalled", async () => {
+    gateway.mockResolvedValueOnce(PROSE).mockResolvedValueOnce(GOOD);
+    const onParseRetry = vi.fn();
+    await generatePlanDoc(testInput(), { onParseRetry });
+    expect(onParseRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays silent when the first attempt parses", async () => {
+    gateway.mockResolvedValueOnce(GOOD);
+    const onParseRetry = vi.fn();
+    await generatePlanDoc(testInput(), { onParseRetry });
+    expect(onParseRetry).not.toHaveBeenCalled();
+  });
 });
 
 describe("synthesis routing for previously-generic transport errors", () => {
@@ -127,5 +141,23 @@ describe("synthesis routing for previously-generic transport errors", () => {
     expect(
       planningFailureSynthesis(new Error("Trion response reached its output limit.")).message,
     ).toMatch(/provider failed the request/);
+  });
+});
+
+describe("synthesis retry visibility", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("notifies when the fast synthesis degenerates and the fallback runs", async () => {
+    gateway
+      .mockResolvedValueOnce("....")
+      .mockResolvedValueOnce(JSON.stringify({ message: "All done.", next_action_hint: null }));
+    const onSynthesisRetry = vi.fn();
+    const doc = await synthesizeResult(testInput(), [], parsePlanDoc(GOOD), undefined, "", null, {
+      onSynthesisRetry,
+    });
+    expect(doc.message).toBe("All done.");
+    expect(onSynthesisRetry).toHaveBeenCalledTimes(1);
   });
 });

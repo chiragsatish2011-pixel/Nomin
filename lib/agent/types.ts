@@ -535,7 +535,7 @@ export type AgentResult = {
 export type StreamEvent =
   | { type: "status"; status: AgentStatus }
   /** An evidence-based progress update for the person following the work. */
-  | { type: "progress"; stage: "plan" | "paused" | "complete" | "notice"; message: string }
+  | { type: "progress"; stage: "plan" | "paused" | "complete" | "notice" | "working"; message: string }
   | { type: "plan"; plan: Plan }
   | { type: "plan_update"; step_id: number; state: PlanStep["state"] }
   | { type: "tool_call"; call: ToolCall }

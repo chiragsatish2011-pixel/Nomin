@@ -19,7 +19,10 @@ export async function synthesizeResult(
    *  which approved steps never ran instead of inferring completion from the
    *  presence of a plan. */
   taskState?: string,
-  verification?: VerificationSummary | null
+  verification?: VerificationSummary | null,
+  /** Retry-visibility hooks. Surfaced as progress events by callers with a
+   *  stream; the synthesis itself stays calm prose. */
+  hooks?: { onSynthesisRetry?: () => void },
 ): Promise<SynthesisDoc> {
   // A failed task must never spend another model request merely to translate a
   // failure into prose. More importantly, model fallbacks occasionally emit a
@@ -49,7 +52,7 @@ export async function synthesizeResult(
 
   // The result summary now carries file lists and fenced code; 800 tokens cut
   // it off mid-block.
-  const doc = await completeSynthesis(messages, input.model, 1_400, "synthesis", input.budget);
+  const doc = await completeSynthesis(messages, input.model, 1_400, "synthesis", input.budget, hooks?.onSynthesisRetry);
 
   // GROUNDING — checked, not requested.
   //
@@ -78,7 +81,8 @@ export async function synthesizeResult(
     input.model,
     1_400,
     "synthesis_fallback",
-    input.budget
+    input.budget,
+    hooks?.onSynthesisRetry
   );
 
   if (ungroundedFileClaims(retry.message, toolTrace).length === 0) return retry;
@@ -479,6 +483,7 @@ async function completeSynthesis(
   maxTokens: number,
   callType: CallType,
   budget?: NormalInput["budget"],
+  onRetry?: () => void,
 ): Promise<SynthesisDoc> {
   // thinking OFF: synthesis is a rendering job. The inputs — the trace, the
   // files written, the step ledger — are already decided facts, and the output
@@ -492,6 +497,7 @@ async function completeSynthesis(
 
   // The fallback DOES think: the cheap path already produced something
   // unusable, so this is the retry that has to be right.
+  onRetry?.();
   const full = parseSynthesisDoc(
     await modelGateway.completeText(messages, { tier, fast: false, maxTokens, callType: "synthesis_fallback", thinking: true, budget })
   );
