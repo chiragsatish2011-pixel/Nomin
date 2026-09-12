@@ -17,6 +17,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 export type CallType =
   | "classification"
   | "plan"
+  | "plan_tools"
   | "execution_decision"
   | "synthesis"
   | "synthesis_fallback"

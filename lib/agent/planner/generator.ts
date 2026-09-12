@@ -48,6 +48,88 @@ const PLAN_REPAIR_PROMPT =
   'using EXACTLY the fields {"plan_summary": "...", "steps": [{"step_id": 1, "description": "...", "tool": ...}]} ' +
   "and no other text: no prose, no markdown, no code fences, no extra fields. Maximum 5 steps.";
 
+/** Function definition for structured plan emission. Mirrors the plan schema
+ *  the prompt already specifies, but enforced by the provider's function
+ *  calling instead of prose instructions alone. Kept intentionally parallel
+ *  to PlanDoc so the existing parser validates the arguments verbatim. */
+export const EMIT_PLAN_TOOL = {
+  type: "function",
+  function: {
+    name: "emit_plan",
+    description: "Emit the approved build plan: a one-line summary plus at most 5 concrete steps",
+    parameters: {
+      type: "object",
+      properties: {
+        plan_summary: { type: "string", description: "One-line summary of what will be done" },
+        steps: {
+          type: "array",
+          maxItems: 5,
+          items: {
+            type: "object",
+            properties: {
+              step_id: { type: "integer", description: "Step number starting at 1" },
+              description: { type: "string", description: "One short sentence naming the file or command" },
+              tool: {
+                type: ["string", "null"],
+                enum: ["read_file", "search_codebase", "web_fetch", "write_file", "run_command", null],
+                description: "Tool for this step, or null for a reasoning-only step",
+              },
+            },
+            required: ["description"],
+          },
+        },
+      },
+      required: ["plan_summary", "steps"],
+    },
+  },
+} as const;
+
+export const EMIT_PLAN_TOOL_CHOICE = {
+  type: "function",
+  function: { name: "emit_plan" },
+} as const;
+
+/** Unwrap a function-calling envelope back to the plan JSON it carries. The
+ *  provider serializes tool_calls as text; the arguments string IS the plan
+ *  payload the legacy parser already validates. Anything that is not a
+ *  recognizable emit_plan envelope passes through untouched, so providers
+ *  that ignore tools degrade to the prompted-JSON path with zero behavior
+ *  change. */
+export function extractPlanPayload(raw: string): string {
+  let parsed: unknown = null;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    // Not valid JSON at all: either plain prose, or a TRUNCATED envelope the
+    // provider never closed. A truncated arguments string is still JSON-escaped,
+    // which blinds the legacy pair-salvage regex (it needs bare quotes) — so
+    // unescape what is there and let salvage rescue any complete pairs.
+    return salvageArgumentsText(raw) ?? raw;
+  }
+  if (!Array.isArray(parsed)) return raw;
+  for (const entry of parsed) {
+    if (
+      typeof entry === "object" &&
+      entry !== null &&
+      (entry as { name?: unknown }).name === "emit_plan" &&
+      typeof (entry as { arguments?: unknown }).arguments === "string"
+    ) {
+      return (entry as { arguments: string }).arguments;
+    }
+  }
+  return raw;
+}
+
+/** Pull the (possibly truncated) arguments string out of a tool_calls
+ *  envelope that never parsed, unescaping quotes so complete pairs inside it
+ *  are visible to salvage. Returns null when there is no arguments string to
+ *  rescue — plain prose is untouched. */
+function salvageArgumentsText(raw: string): string | null {
+  const match = raw.match(/"arguments"\s*:\s*"(.*)$/s);
+  if (!match) return null;
+  return match[1].replace(/\\"/g, '"');
+}
+
 /** Produce the plan WITHOUT emitting it.
  *
  *  Split out so the orchestrator can start planning speculatively, in parallel
@@ -77,12 +159,19 @@ export async function generatePlanDoc(
   // so the repair re-ask rides the same queue priority, rate limiter, circuit
   // breaker, and retry budget as the first try — never a bespoke fetch that
   // would silently double effective RPM against the governor.
+  //
+  // callType is plan_tools, NOT plan: the "plan" label routes to the Gemini
+  // build lane when configured, but only the hosted Nemotron route honors
+  // function calling — which is the entire point of this call. Same budgets
+  // and priority as plan; only the lane and the structure enforcement differ.
   const gatewayOpts = {
     tier: tierForRole(input.model, "planner"),
     maxTokens: 900,
-    callType: "plan" as const,
+    callType: "plan_tools" as const,
     thinking: false,
     budget: input.budget,
+    tools: [EMIT_PLAN_TOOL],
+    toolChoice: EMIT_PLAN_TOOL_CHOICE,
     // The configured primary route did not return even a 64-token health
     // response within 70 seconds. Planning is a compact structured contract,
     // while actual source authoring remains on the capable local build worker.
@@ -98,7 +187,10 @@ export async function generatePlanDoc(
   for (let attempt = 1; attempt <= MAX_PLAN_PARSE_ATTEMPTS; attempt += 1) {
     const raw = await modelGateway.completeText(pendingMessages, gatewayOpts);
     try {
-      const plan = ensureVerificationStep(normalizeInterfaceWrites(parsePlanDoc(raw), input));
+      // tool_choice responses arrive as a serialized tool_calls envelope;
+      // prompted-JSON responses (provider ignored tools, repair re-ask) parse
+      // as before. One parser validates both — the safety net is intact.
+      const plan = ensureVerificationStep(normalizeInterfaceWrites(parsePlanDoc(extractPlanPayload(raw)), input));
       return exhaustiveBuildTestEnabled() ? stageExhaustiveInterfacePlan(plan, input) : plan;
     } catch (error) {
       if (!(error instanceof PlanParseError)) throw error;

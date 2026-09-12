@@ -6,6 +6,7 @@ import { queuedCompletion, queuedTextCompletion } from "@/lib/nim/internal-clien
 import { sanitize, sanitizeToolInput, assertNoLeaks } from "./sanitize";
 import { perf, estTokensOf } from "./perf";
 import { takeBudgetSlot, type TurnBudget } from "./turn-budget";
+import type { ProviderTool, ProviderToolChoice } from "@/lib/nim/internal-client";
 import { STATIC_SYSTEM_PROMPTS } from "./static-prompts";
 import { recordUsage, type CallType } from "./token-ledger";
 
@@ -48,6 +49,11 @@ export interface ModelOptions {
    *  repair, and review chain draws from the same allowance. Absent means
    *  unenforced (bench/offline contexts). */
   budget?: TurnBudget;
+  /** OpenAI-shaped function-calling passthrough, forwarded to the provider
+   *  client (hosted route only). Absent by default: existing callers are
+   *  unaffected. */
+  tools?: ProviderTool[];
+  toolChoice?: ProviderToolChoice;
 }
 
 /**
@@ -72,6 +78,10 @@ export const CALL_RELIABILITY: Record<CallType, { timeoutMs: number; maxAttempts
   classification: { timeoutMs: 15_000, maxAttempts: 2 },
   direct_answer: { timeoutMs: 20_000, maxAttempts: 2 },
   plan: { timeoutMs: 45_000, maxAttempts: 2 },
+  // Structured plan call: same bounds as prompted planning. The label differs
+  // (plan_tools, not plan) so routing stays on the hosted function-calling
+  // route instead of the Gemini build lane.
+  plan_tools: { timeoutMs: 45_000, maxAttempts: 2 },
   plan_only: { timeoutMs: 30_000, maxAttempts: 2 },
   execution_decision: { timeoutMs: 30_000, maxAttempts: 2 },
   synthesis: { timeoutMs: 30_000, maxAttempts: 2 },
@@ -123,6 +133,7 @@ const TIER_CONFIG: Record<TrionTier, { maxTokens: number; temperature: number }>
 const INPUT_TOKEN_BUDGET: Record<CallType, number> = {
   classification: 1_500,
   plan: 3_000,
+  plan_tools: 3_000,
   execution_decision: 8_000,
   synthesis: 5_000,
   synthesis_fallback: 5_000,
@@ -149,6 +160,7 @@ const INPUT_TOKEN_BUDGET: Record<CallType, number> = {
 const CALL_PRIORITY: Record<CallType, number> = {
   classification: 0,
   plan: 1,
+  plan_tools: 1,
   execution_decision: 2,
   direct_answer: 2,
   plan_only: 3,
@@ -264,6 +276,8 @@ export const modelGateway = {
       temperature: opts.temperature ?? config.temperature,
       thinking: opts.thinking,
       allowTruncated: opts.allowTruncated,
+      tools: opts.tools,
+      toolChoice: opts.toolChoice,
       priority: CALL_PRIORITY[callType],
       label: callType,
       timeoutMs: reliability.timeoutMs,
@@ -307,6 +321,8 @@ export const modelGateway = {
       temperature: opts.temperature ?? config.temperature,
       thinking: opts.thinking,
       allowTruncated: opts.allowTruncated,
+      tools: opts.tools,
+      toolChoice: opts.toolChoice,
       priority: CALL_PRIORITY[callType],
       label: callType,
       timeoutMs: reliability.timeoutMs,
