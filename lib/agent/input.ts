@@ -9,6 +9,7 @@ import { perf } from "./perf";
 import { isProtectedTurn } from "./context";
 import { AGENT_MODEL_TIERS, isModelTierAvailable } from "./model-tiers";
 import { isSensitiveWorkspacePath } from "./path-policy";
+import { validateClientCheckpoint, type ClientCheckpoint } from "./resume-checkpoint";
 import type { ByokProviderConfig } from "@/lib/nim/byok-context";
 
 // The client reports its WebContainer workspace root as a label; it is never a
@@ -46,6 +47,12 @@ export type ValidatedChatRequest = {
   history?: ConversationTurn[];
   /** Explicit Retry action: continue a saved, approved execution plan. */
   resume?: boolean;
+  /** Client-persisted resume checkpoint (plan + evidence from the last turn's
+   *  result event). Used ONLY to rehydrate the server map on lookup miss after
+   *  a restart — a present server checkpoint always wins. Invalid shapes are
+   *  treated as absent (graceful fallback), never a hard validation failure,
+   *  so client/server version skew cannot brick a retry. */
+  checkpoint?: ClientCheckpoint | null;
   /** Ephemeral browser-tab connection. It is used for this turn only and is
    * never written to the session store, trace, logs, or exported output. */
   byok?: ByokProviderConfig;
@@ -166,6 +173,7 @@ export function parseChatRequest(payload: unknown): ValidatedChatRequest {
     attachments,
     history,
     resume: payload.resume === true,
+    checkpoint: validateClientCheckpoint(payload.checkpoint ?? null),
     byok,
   };
 }

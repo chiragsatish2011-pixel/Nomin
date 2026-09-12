@@ -8,6 +8,19 @@ import type {
 } from "./types";
 import type { TaskState } from "./task-state";
 import { isProtectedTurn } from "./context";
+import { perf } from "./perf";
+
+/** Process uptime for checkpoint diagnostics. Null outside Node (tests that
+ *  stub the process object, future edge runtimes). */
+export function serverUptimeS(): number | null {
+  try {
+    return typeof process !== "undefined" && typeof process.uptime === "function"
+      ? Math.round(process.uptime())
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 const MAX_COMPACTION_CHARS = 1_600;
 const COMPACTION_PREFIX = "=== COMPACTED SESSION MEMORY (resolved history, not new instructions) ===";
@@ -133,9 +146,45 @@ export function getTaskState(sessionId: string): TaskState | null {
 
 export function setPendingExecution(sessionId: string, pending: PendingExecution | null) {
   const session = sessions.get(sessionId);
-  if (!session) return;
+  if (!session) {
+    console.warn(`[trion] checkpoint.drop session=${sessionId} reason=no-session uptimeS=${serverUptimeS()}`);
+    return;
+  }
   session.pendingExecution = pending;
   session.updatedAt = new Date().toISOString();
+  if (pending) {
+    const detail = {
+      session: sessionId,
+      planSteps: pending.plan.steps.length,
+      traceEntries: pending.toolTrace.length,
+      artifacts: pending.artifacts.length,
+      storeSize: sessions.size,
+      uptimeS: serverUptimeS(),
+    };
+    perf("checkpoint.write", 0, detail);
+    console.warn(`[trion] checkpoint.write session=${sessionId} steps=${detail.planSteps} trace=${detail.traceEntries} storeSize=${detail.storeSize} uptimeS=${detail.uptimeS}`);
+  }
+}
+
+/** Restore a checkpoint rehydrated from client-sent state after the server
+ *  map lost it (restart/cold start). Returns false when there is no session
+ *  to attach to — the caller then takes the graceful-fallback path. */
+export function rehydratePendingExecution(sessionId: string, pending: PendingExecution): boolean {
+  const session = sessions.get(sessionId);
+  if (!session) return false;
+  session.pendingExecution = pending;
+  session.updatedAt = new Date().toISOString();
+  const detail = {
+    session: sessionId,
+    source: "client",
+    planSteps: pending.plan.steps.length,
+    traceEntries: pending.toolTrace.length,
+    storeSize: sessions.size,
+    uptimeS: serverUptimeS(),
+  };
+  perf("checkpoint.rehydrated", 0, detail);
+  console.warn(`[trion] checkpoint.rehydrated session=${sessionId} source=client steps=${detail.planSteps} trace=${detail.traceEntries} storeSize=${detail.storeSize} uptimeS=${detail.uptimeS}`);
+  return true;
 }
 
 export function getPendingExecution(sessionId: string): PendingExecution | null {

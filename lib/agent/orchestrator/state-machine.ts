@@ -25,7 +25,7 @@ import { executeSteps } from "../executor/step-runner";
 import { pausedTaskSynthesis, planningFailureSynthesis, answerFailureSynthesis, synthesizeResult, synthesizeDirectAnswer, synthesizePlanOnly } from "../synthesis/generator";
 import { buildFinalOutput } from "../output/builder";
 import { normalizeInput } from "../input";
-import { getOrCreateSession, appendTurn, getPendingExecution, getTaskState, hydrateHistoryIfEmpty, setPendingExecution, setTaskState } from "../session-store";
+import { getOrCreateSession, appendTurn, getPendingExecution, getSessionCount, getTaskState, hydrateHistoryIfEmpty, rehydratePendingExecution, serverUptimeS, setPendingExecution, setTaskState } from "../session-store";
 import {
   applyPlan,
   applyTrace,
@@ -39,6 +39,7 @@ import {
   type TaskState,
 } from "../task-state";
 import { awaitPlanApproval, hashPlan } from "../execution/bridge";
+import { toPendingExecution, type ClientCheckpoint } from "../resume-checkpoint";
 import { planNeedsApproval } from "../approval";
 import { sanitize as sanitizeError } from "../sanitize";
 import { buildClarificationOutput, toClarificationQuestion } from "../clarification";
@@ -85,6 +86,8 @@ type TurnRequest = {
   attachments?: AttachedContext[];
   history?: ConversationTurn[];
   resume?: boolean;
+  /** Client-persisted resume checkpoint for server-map misses. See input.ts. */
+  checkpoint?: ClientCheckpoint | null;
   byok?: ByokProviderConfig;
 };
 
@@ -299,29 +302,34 @@ async function runTurnInner(
     // Retry is a continuation command, never another natural-language turn.
     // Reuse the exact plan the user already approved and the durable step
     // ledger, so a quota pause costs no second classification or planning call.
-    const pendingExecution = request.resume ? getPendingExecution(ctx.sessionId) : null;
+    let pendingExecution = request.resume ? getPendingExecution(ctx.sessionId) : null;
+    if (!pendingExecution && request.resume) {
+      // Server-map miss. The map is process-local: a restart, redeploy, or
+      // cold start wipes it while the browser still holds the thread. Log the
+      // miss with enough detail to distinguish that from TTL eviction (30d)
+      // or a regenerated key (the client keeps one id per thread).
+      const miss = { session: ctx.sessionId, storeSize: getSessionCount(), uptimeS: serverUptimeS() };
+      perf("checkpoint.miss", 0, miss);
+      console.warn(`[trion] checkpoint.miss session=${ctx.sessionId} storeSize=${miss.storeSize} uptimeS=${miss.uptimeS}`);
+      if (request.checkpoint) {
+        // The browser is the source of truth: it persisted the last turn's
+        // plan and evidence from its result event. Rehydrate the cache and
+        // resume as if the process had never died. Retry is an explicit user
+        // action on a plan it already saw, so no second approval is needed.
+        const rehydrated = toPendingExecution(request.checkpoint, request.userText);
+        pendingExecution = rehydrated;
+        rehydratePendingExecution(ctx.sessionId, rehydrated);
+        emit({ type: "progress", stage: "notice", message: "Workspace checkpoint was restored from this browser — continuing where the last run paused." });
+      }
+    }
     if (pendingExecution) {
       return resumeApprovedExecution(ctx, pendingExecution, emit, t0, signal);
     }
     if (request.resume) {
-      // Resume is an explicit continuation command. Never let a missing or
-      // expired checkpoint fall through into classification and planning: that
-      // silently restarts the task and is especially damaging after a quota or
-      // server pause. End this request deterministically and make the recovery
-      // action clear to the user.
-      const message = "This saved build no longer has a resumable checkpoint. Nothing was restarted. Start a new thread to begin again.";
-      const output = buildFinalOutput(
-        { message, next_action_hint: "Start a new thread to create a fresh plan." },
-        null,
-        [],
-        [],
-        "error",
-      );
-      appendTurn(ctx.sessionId, { role: "assistant", content: message });
-      emit({ type: "status", status: "error" });
-      emitOutput(emit, output);
-      emit({ type: "result", data: output });
-      return output;
+      // Genuinely unrecoverable (abandoned thread, corrupt or absent client
+      // state). Restart planning from the last message instead of dead-ending:
+      // a fresh turn is strictly more useful than a stop sign.
+      emit({ type: "progress", stage: "notice", message: "Continuing from your last message — prior progress couldn't be restored." });
     }
 
     // Persist user message to session history
@@ -766,11 +774,19 @@ async function resumeApprovedExecution(
   t0: number,
   signal?: AbortSignal
 ): Promise<AgentOutput> {
-  const taskState = getTaskState(ctx.sessionId) ?? emptyTaskState(pending.originalUserText);
+  const stored = getTaskState(ctx.sessionId);
+  const taskState = stored ?? emptyTaskState(pending.originalUserText);
   ctx.plan = pending.plan;
   ctx.toolTrace = [...pending.toolTrace];
   ctx.artifacts = [...pending.artifacts];
   resumePlan(taskState, ctx.plan);
+  if (!stored) {
+    // Rehydrated after process death: the durable step ledger died with the
+    // old process, so fold the checkpoint's own evidence back in. Steps with
+    // a successful trace entry stay done instead of being rebuilt; anything
+    // else runs. Evidence-only, never invented.
+    applyTrace(taskState, pending.toolTrace);
+  }
   setTaskState(ctx.sessionId, taskState);
 
   // Rehydrate the calm progress view without asking for approval again: the

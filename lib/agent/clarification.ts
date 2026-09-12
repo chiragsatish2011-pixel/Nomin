@@ -63,7 +63,7 @@ function questionFor(userMessage: string, context?: ClarificationContext): strin
 function projectLeadFor(context?: ClarificationContext): string {
   const framework = context?.facts.find((fact) => /\b(?:Next\.js|Vite\/React)\b/i.test(fact));
   if (!framework) return "";
-  const name = /Next\.js/i.test(framework) ? "Next.js" : "the existing Vite/React setup";
+  const name = /Next\.js/i.test(framework) ? "Next.js" : "existing Vite/React";
   return `I’ll keep the project’s ${name} setup. `;
 }
 

@@ -66,7 +66,14 @@ describe("turn cancellation", () => {
     expect(events).toContainEqual({ type: "status", status: "cancelled" });
   });
 
-  it("does not reclassify or replan when a resume checkpoint is missing", async () => {
+  it("restarts as a fresh turn with a notice when a resume checkpoint is missing", async () => {
+    // Client-held checkpoints (resume-checkpoint.ts) cover restarts; when
+    // nothing is recoverable the turn continues fresh instead of dead-ending.
+    mocks.classifyIntent.mockResolvedValue({
+      intent: "needs_clarification",
+      activity: "clarifying",
+      reason: "What should the site help visitors do?",
+    });
     const events: unknown[] = [];
     const output = await runTurn(
       { ...request, sessionId: `missing-resume-${Date.now()}`, resume: true },
@@ -74,11 +81,13 @@ describe("turn cancellation", () => {
       Date.now(),
     );
 
-    expect(output.status).toBe("error");
-    expect(output.message).toMatch(/no longer has a resumable checkpoint/i);
-    expect(output.plan).toBeNull();
-    expect(mocks.classifyIntent).not.toHaveBeenCalled();
+    expect(output.status).toBe("needs_clarification");
+    expect(mocks.classifyIntent).toHaveBeenCalledTimes(1);
     expect(mocks.generatePlanDoc).not.toHaveBeenCalled();
-    expect(events).toContainEqual({ type: "status", status: "error" });
+    expect(events).toContainEqual({
+      type: "progress",
+      stage: "notice",
+      message: "Continuing from your last message — prior progress couldn't be restored.",
+    });
   });
 });

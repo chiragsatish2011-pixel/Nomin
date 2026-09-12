@@ -5,6 +5,8 @@
 // both the input and output contracts documented in the architecture plan.
 // ---------------------------------------------------------------------------
 
+import type { TurnBudget } from "./turn-budget";
+
 // -- INPUT CONTRACT ---------------------------------------------------------
 
 /** Discriminator: "plan" produces a plan-only response, "execute" runs tools. */
@@ -80,6 +82,9 @@ export type NormalInput = {
   conversation_history: ConversationTurn[];
   attached_context: AttachedContext[];
   workspace_snapshot: WorkspaceSnapshot;
+  /** Per-turn call budget. Set by the orchestrator per runTurn; absent in
+   *  offline/bench contexts, where enforcement is deliberately off. */
+  budget?: TurnBudget;
 };
 
 // -- OUTPUT CONTRACT --------------------------------------------------------
@@ -530,7 +535,7 @@ export type AgentResult = {
 export type StreamEvent =
   | { type: "status"; status: AgentStatus }
   /** An evidence-based progress update for the person following the work. */
-  | { type: "progress"; stage: "plan" | "paused" | "complete"; message: string }
+  | { type: "progress"; stage: "plan" | "paused" | "complete" | "notice"; message: string }
   | { type: "plan"; plan: Plan }
   | { type: "plan_update"; step_id: number; state: PlanStep["state"] }
   | { type: "tool_call"; call: ToolCall }

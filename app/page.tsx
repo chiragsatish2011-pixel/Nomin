@@ -31,7 +31,7 @@ import { WorkPanel, type LiveFile } from "@/app/components/WorkPanel";
 import { ArtifactPanel } from "@/app/components/ArtifactPanel";
 import { AccountMenu } from "@/app/components/AccountMenu";
 import { useWebContainerExecutor } from "@/app/hooks/useWebContainerExecutor";
-import type { AgentMode, AgentModel, Plan } from "@/lib/agent/types";
+import type { AgentMode, AgentModel, Artifact, Plan, ToolTraceEntry } from "@/lib/agent/types";
 import { ACTIVITY_LABELS, toAgentStatus } from "@/lib/agent/types";
 import { MAX_SAVED_SESSION_BYTES, MAX_TOTAL_SAVED_SESSION_BYTES } from "@/app/lib/storage-hygiene";
 import { type AgentOutput, type LegacyAgentOutput, type AgentStreamEvent, parseAgentStreamEvent } from "@/lib/agent/protocol";
@@ -137,7 +137,7 @@ type TurnEntry = {
 
 type ProgressUpdate = {
   id: string;
-  stage: "plan" | "paused" | "complete";
+  stage: "plan" | "paused" | "complete" | "notice";
   message: string;
   at: number;
 };
@@ -190,6 +190,87 @@ function scopedStorageKey(key: string): string {
 
 function scopedTurnKey(id: string): string {
   return scopedStorageKey(`${SESSION_TURNS_PREFIX}${id}`);
+}
+
+// --- Client-held resume checkpoints ------------------------------------------
+//
+// The server keeps checkpoints in process memory, so a restart, redeploy, or
+// cold start wipes them while the browser still holds the thread. The browser
+// therefore snapshots the last errored turn's plan + evidence from its result
+// event and re-sends it with resume:true; the server treats its own map as a
+// cache and rehydrates from this payload on lookup miss. Never credentials,
+// never bridge handles — only the user-visible plan and its evidence.
+
+type ClientCheckpointSnapshot = {
+  plan: Plan;
+  toolTrace: ToolTraceEntry[];
+  artifacts: Artifact[];
+};
+
+const CHECKPOINT_KEY_PREFIX = "trion-checkpoint:";
+/** Stays comfortably under the server's 256KB validation cap. */
+const MAX_CHECKPOINT_BYTES = 200_000;
+const MAX_CHECKPOINT_TRACE_OUTPUT = 8_000;
+const MAX_CHECKPOINT_ARTIFACT_CONTENT = 32_000;
+const CLIP_MARKER = "…[clipped for checkpoint]";
+
+function checkpointStorageKey(id: string): string {
+  return scopedStorageKey(`${CHECKPOINT_KEY_PREFIX}${id}`);
+}
+
+function clipCheckpointText(value: string, max: number): string {
+  return value.length <= max ? value : `${value.slice(0, max)}${CLIP_MARKER}`;
+}
+
+/** Snapshot a failed turn for a later retry, or null when there is nothing
+ *  resumable (success, cancellation, or no plan). Oversized snapshots are
+ *  dropped rather than clipped into misleading evidence. */
+function snapshotCheckpointFrom(output: AgentOutput): ClientCheckpointSnapshot | null {
+  if (!output.plan || output.status !== "error") return null;
+  const snapshot: ClientCheckpointSnapshot = {
+    plan: output.plan,
+    toolTrace: output.tool_trace.map((entry) => ({
+      ...entry,
+      output: clipCheckpointText(entry.output, MAX_CHECKPOINT_TRACE_OUTPUT),
+    })),
+    artifacts: output.artifacts.map((artifact) => ({
+      ...artifact,
+      content: clipCheckpointText(artifact.content, MAX_CHECKPOINT_ARTIFACT_CONTENT),
+    })),
+  };
+  try {
+    if (JSON.stringify(snapshot).length > MAX_CHECKPOINT_BYTES) return null;
+  } catch {
+    return null;
+  }
+  return snapshot;
+}
+
+function readCheckpoint(id: string): ClientCheckpointSnapshot | null {
+  try {
+    const raw = localStorage.getItem(checkpointStorageKey(id));
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const snapshot = parsed as ClientCheckpointSnapshot;
+    if (!snapshot.plan || !Array.isArray(snapshot.toolTrace) || !Array.isArray(snapshot.artifacts)) return null;
+    return snapshot;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist (or clear, when snapshot is null) the thread's resume checkpoint. */
+function writeCheckpoint(id: string, snapshot: ClientCheckpointSnapshot | null): void {
+  try {
+    if (!snapshot) {
+      localStorage.removeItem(checkpointStorageKey(id));
+      return;
+    }
+    localStorage.setItem(checkpointStorageKey(id), JSON.stringify(snapshot));
+  } catch {
+    // Quota or private mode — the retry simply falls back to a fresh turn.
+  }
 }
 
 function readSessionIndex(): SessionEntry[] {
@@ -746,6 +827,7 @@ export default function Home() {
   function deleteSession(id: string, event: React.MouseEvent) {
     event.stopPropagation();
     forgetSession(id);
+    writeCheckpoint(id, null);
     if (id === sessionId) newThread();
   }
 
@@ -1066,6 +1148,9 @@ export default function Home() {
           history: turns.map(({ role, content }) => ({ role, content })),
           attachments: attachedFiles.map((file) => ({ path: file.name, content: file.content })),
           resume,
+          // Client-held checkpoint for server-map misses after a restart.
+          // Only ever sent on an explicit retry of the same thread.
+          ...(resume ? { checkpoint: readCheckpoint(sessionId) ?? undefined } : {}),
           byok: readConnection() ?? undefined,
         })
       });
@@ -1409,6 +1494,10 @@ export default function Home() {
       setApprovalPending(false);
       setApprovalPlan(null);
       setAgentOutput(output);
+      // The browser is the durable side of the resume checkpoint: the server
+      // map is process-local and dies on restart. Snapshot errored turns with
+      // a plan; anything else clears the checkpoint (done, cancelled, plan-less).
+      writeCheckpoint(sessionId, snapshotCheckpointFrom(output));
       // Turn is complete — collapse the trace into the docked pill. The sandbox
       // stays up: it holds the user's project.
       setTraceCollapsed(true);
