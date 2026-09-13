@@ -49,7 +49,7 @@ export type RateGovernor = ReturnType<typeof createRateGovernor>;
 
 export function createRateGovernor(config: Partial<RateGovernorConfig> = {}) {
   const cfg: RateGovernorConfig = {
-    rpm: config.rpm ?? 40,
+    rpm: config.rpm ?? 35,
     tpm: config.tpm ?? 0,
     minRpm: config.minRpm ?? 4,
     now: config.now ?? Date.now,
@@ -231,7 +231,7 @@ export function estimateCallTokens(messages: Array<{ content: string }>, maxToke
 const globalStore = globalThis as typeof globalThis & { __trionRateGovernor?: RateGovernor };
 
 export const rateGovernor: RateGovernor = (globalStore.__trionRateGovernor ??= createRateGovernor({
-  rpm: Number(process.env.TRION_RPM_LIMIT ?? 40),
+  rpm: Number(process.env.TRION_RPM_LIMIT ?? 35),
   tpm: Number(process.env.TRION_TPM_LIMIT ?? 0),
   minRpm: Number(process.env.TRION_MIN_RPM ?? 4),
 }));

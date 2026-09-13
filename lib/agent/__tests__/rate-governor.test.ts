@@ -182,9 +182,12 @@ describe("retry delay", () => {
   });
 
   it("falls back to exponential backoff when the response says nothing", () => {
-    expect(retryDelayMs(1)).toBe(1000);
-    expect(retryDelayMs(2)).toBe(2000);
-    expect(retryDelayMs(3)).toBe(4000);
+    expect(retryDelayMs(1)).toBeGreaterThanOrEqual(1000);
+    expect(retryDelayMs(1)).toBeLessThan(1250);
+    expect(retryDelayMs(2)).toBeGreaterThanOrEqual(2000);
+    expect(retryDelayMs(2)).toBeLessThan(2250);
+    expect(retryDelayMs(3)).toBeGreaterThanOrEqual(4000);
+    expect(retryDelayMs(3)).toBeLessThan(4250);
   });
 
   it("caps only the guess at 30s", () => {

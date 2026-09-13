@@ -43,6 +43,7 @@ export function shouldRunCodingReview(
   trace: ToolTraceEntry[],
   verification: VerificationSummary | null | undefined
 ): boolean {
+  if (process.env.TRION_CODING_REVIEW === "0") return false;
   return input.mode === "execute" &&
     Boolean(plan && plan.steps.length > 1) &&
     trace.filter((entry) => entry.tool_name === "write_file" && entry.status === "success").length > 1 &&

@@ -322,7 +322,7 @@ let wakeTimer: ReturnType<typeof setTimeout> | null = null;
  * typical plan allows. Rate is governed separately, in `rate-governor.ts`; the
  * two limits are independent and both are load-bearing.
  */
-const MAX_CONCURRENCY = Math.max(1, Number(process.env.TRION_MAX_CONCURRENCY || 6));
+const MAX_CONCURRENCY = Math.max(1, Number(process.env.TRION_MAX_CONCURRENCY || 4));
 /**
  * Keep request starts below the shared 40-RPM free-tier ceiling even when a
  * burst of concurrent turns arrives. A 1.6s default permits 37.5 starts/min
@@ -336,7 +336,7 @@ export function defaultDispatchIntervalMs(rpm: number): number {
   return Math.ceil(60_000 / rpm) + 100;
 }
 
-const configuredRpm = Number(process.env.TRION_RPM_LIMIT ?? 40);
+const configuredRpm = Number(process.env.TRION_RPM_LIMIT ?? 35);
 const intervalOverride = process.env.TRION_MIN_INTERVAL_MS ?? process.env.NIM_MIN_INTERVAL_MS;
 const requestedIntervalMs = intervalOverride === undefined ? 0 : Math.max(0, Number(intervalOverride) || 0);
 const MIN_INTERVAL_MS = requestedIntervalMs > 0 ? requestedIntervalMs : defaultDispatchIntervalMs(configuredRpm);
@@ -762,7 +762,8 @@ export function retryDelayMs(attempt: number, error?: { headers?: Record<string,
   }
 
   const backoff = 1000 * Math.pow(2, attempt - 1);
-  return Math.min(backoff, 30000);
+  const jitter = Math.floor(Math.random() * 250);
+  return Math.min(backoff + jitter, 30000);
 }
 
 /**
@@ -924,6 +925,9 @@ function enqueue(messages: NimMessage[], maxTokens: number, opts: CompletionOpti
       return;
     }
 
+    if (queue.length > 5) {
+      console.warn(`[trion] Model queue depth warning: ${queue.length} pending requests.`);
+    }
     queue.push(task);
     void pump();
   });

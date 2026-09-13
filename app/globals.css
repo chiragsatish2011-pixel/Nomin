@@ -227,9 +227,7 @@ summary:focus-visible {
 }
 
 .ambientVeil {
-  background:
-    radial-gradient(ellipse at 58% 78%, rgb(var(--accent-rgb) / 0.11), transparent 35%),
-    linear-gradient(180deg, rgb(var(--base-rgb) / 0.10), rgb(var(--base-rgb) / 0.92));
+  background: var(--navy-black);
   inset: 0;
   pointer-events: none;
   position: fixed;
@@ -331,15 +329,7 @@ summary:focus-visible {
 }
 
 .sidebarCaustic {
-  animation: sidebarDrift 16s var(--calm-ease) infinite alternate;
-  background:
-    radial-gradient(ellipse at 28% 12%, rgb(var(--accent-rgb) / 0.095), transparent 30%),
-    radial-gradient(ellipse at 86% 48%, rgb(var(--accent-rgb) / 0.065), transparent 38%);
-  filter: blur(12px);
-  inset: -12%;
-  opacity: 0.72;
-  pointer-events: none;
-  position: absolute;
+  display: none !important;
 }
 
 .zenSidebar > *:not(.sidebarCaustic) {
