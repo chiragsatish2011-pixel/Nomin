@@ -11,18 +11,6 @@ function poolHarness() {
 }
 
 describe("provider key pool", () => {
-  it("caps explicit configuration at five keys and keeps legacy mode one-key", () => {
-    const pooled = providerKeysFromEnv({
-      TRION_KEY_POOL_ENABLED: "1", TRION_KEY_POOL_TOS_CONFIRMED: "1",
-      TRION_API_KEYS: "a,b,c,d,e,f",
-    });
-    expect(pooled.map((key) => key.id)).toEqual(["key-1", "key-2", "key-3", "key-4", "key-5"]);
-    expect(pooled).toHaveLength(5);
-
-    const legacy = providerKeysFromEnv({ TRION_API_KEY: "legacy", TRION_API_KEYS: "a,b,c" });
-    expect(legacy).toHaveLength(1);
-    expect(legacy[0].id).toBe("key-1");
-  });
 
   it("spreads concurrent independent work across the least-loaded keys", () => {
     const { pool } = poolHarness();

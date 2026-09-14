@@ -177,6 +177,7 @@ export function totalsFor(sessionId: string): LedgerTotals {
 export const REFERENCE_RATES: Record<string, { inputPerMTok: number; outputPerMTok: number }> = {
   "nvidia/nemotron-3-ultra-550b-a55b": { inputPerMTok: 0.5, outputPerMTok: 2.2 },
   "nvidia/nemotron-3-nano-30b-a3b": { inputPerMTok: 0.05, outputPerMTok: 0.2 },
+  "meta/llama2-70b": { inputPerMTok: 0.1, outputPerMTok: 0.3 },
 };
 
 export function costUsd(totals: LedgerTotals): number {

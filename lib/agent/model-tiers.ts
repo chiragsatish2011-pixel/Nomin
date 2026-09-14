@@ -14,8 +14,8 @@ export type ModelEnvironment = Record<string, string | undefined>;
 export const AGENT_MODEL_TIERS: readonly AgentModel[] = ["trion-1.4", "trion-1.9", "trion-2.3"];
 export type AgentRole = "planner" | "executor" | "verifier";
 
-const DEFAULT_PRIMARY_MODEL = "nvidia/nemotron-3-ultra-550b-a55b";
-const DEFAULT_FAST_MODEL = "nvidia/nemotron-3-nano-30b-a3b";
+const DEFAULT_PRIMARY_MODEL = "meta/llama2-70b";
+const DEFAULT_FAST_MODEL = "meta/llama2-70b";
 
 /** `null` rather than `undefined`, matching what `configured()` returns: an
  *  env var that is absent and one that is set to whitespace are the same thing

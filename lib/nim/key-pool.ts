@@ -33,28 +33,10 @@ export type KeyPool = ReturnType<typeof createKeyPool>;
 /** Read pool credentials only from process environment. Values are never
  * returned in telemetry, error messages, or test snapshots. */
 export function providerKeysFromEnv(env: Record<string, string | undefined> = process.env): ProviderKeyConfig[] {
-  const enabled = env.TRION_KEY_POOL_ENABLED === "1" && env.TRION_KEY_POOL_TOS_CONFIRMED === "1";
-  const rawPool = enabled ? (env.TRION_API_KEYS ?? env.NIM_API_KEYS ?? "") : "";
-  const candidates = rawPool
-    .split(/[\n,]/)
-    .map((value) => value.trim())
-    .filter(Boolean);
+  const candidates: string[] = [];
 
-  // Numbered variables are easier to manage in hosted secret stores than one
-  // comma-separated value. They are accepted only under the same explicit gate.
-  if (enabled) {
-    for (let index = 1; index <= MAX_PROVIDER_KEYS; index++) {
-      const value = env[`TRION_API_KEY_${index}`] ?? env[`NIM_API_KEY_${index}`];
-      if (value?.trim()) candidates.push(value.trim());
-    }
-  }
-
-  // Existing installations remain exactly one-key until the pool is explicitly
-  // enabled and acknowledged. This preserves the previous production behavior.
-  if (!candidates.length) {
-    const legacy = env.TRION_API_KEY ?? env.NIM_API_KEY;
-    if (legacy?.trim()) candidates.push(legacy.trim());
-  }
+  const legacy = env.TRION_API_KEY;
+  if (legacy?.trim()) candidates.push(legacy.trim());
 
   const seen = new Set<string>();
   return candidates

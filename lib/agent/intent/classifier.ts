@@ -427,6 +427,7 @@ Use these established conventions to resolve implementation details when they an
   } catch (error) {
     // A stopped turn stays stopped: the ambient signal aborted this call, and
     // guessing an intent for it would resurrect cancelled work as a new turn.
+    console.error("Classifier error:", error);
     if (currentTurnSignal()?.aborted) throw error;
     // Fallback: keyword heuristic keeps the activity task-appropriate.
     // Task signals always win over question/greeting words ("can you fix X?").

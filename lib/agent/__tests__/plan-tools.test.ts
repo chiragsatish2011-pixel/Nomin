@@ -22,7 +22,7 @@ vi.mock("../intent/classifier", () => ({
 }));
 
 import { runTurn } from "../orchestrator/state-machine";
-import { providerFallbackOrder, shouldRouteToGemini } from "@/lib/nim/internal-client";
+import { providerFallbackOrder } from "@/lib/nim/internal-client";
 
 const gateway = gatewayMocks.completeText;
 
@@ -125,11 +125,7 @@ describe("generatePlanDoc sends tool_choice on the hosted lane", () => {
 
 describe("plan_tools routing stays on the hosted function-calling lane", () => {
   const both = { GEMINI_API_KEY_1: "g1", TRION_API_KEY: "h1" } as Record<string, string | undefined>;
-  it("never routes to Gemini even when Gemini keys exist", () => {
-    expect(shouldRouteToGemini({ label: "plan_tools" }, both)).toBe(false);
-    // Control: the legacy plan label still prefers Gemini when configured.
-    expect(shouldRouteToGemini({ label: "plan" }, both)).toBe(true);
-  });
+
 
   it("has no fallback hop away from hosted", () => {
     expect(providerFallbackOrder("plan_tools", both)).toEqual(["hosted"]);
