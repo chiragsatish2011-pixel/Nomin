@@ -163,26 +163,19 @@ function settleTask(task: QueueTask, outcome: { ok: true; value: unknown } | { o
 }
 
 function preferredRoute(opts: CompletionOptions): QueueTask["route"] {
-  const label = opts.label ?? "";
-  if (label === "plan" || GEMINI_BUILD_CALL_TYPES.has(label)) return geminiConfigured() ? "gemini" : "hosted";
   return "hosted";
 }
 
 /** Safe, provider-label-free route order used by tests and internal telemetry.
  * The label is never serialized into user-facing output. */
 export function providerFallbackOrder(label: string, env: Record<string, string | undefined> = process.env): Array<QueueTask["route"]> {
-  if (label === "plan" || GEMINI_BUILD_CALL_TYPES.has(label)) {
-    return [...(geminiConfigured(env) ? ["gemini" as const] : []), "hosted"];
-  }
   return ["hosted"];
 }
+function fallbackRoute(task: QueueTask): QueueTask["route"] | null { return null; }
+export function geminiConfigured(env: Record<string, string | undefined> = process.env): boolean { return false; }
+export const GEMINI_BUILD_CALL_TYPES = new Set<string>();
 
-function fallbackRoute(task: QueueTask): QueueTask["route"] | null {
-  if (task.fallbackHops >= 2) return null;
-  const order = providerFallbackOrder(task.opts.label ?? "");
-  const currentIndex = order.indexOf(task.route);
-  return currentIndex >= 0 ? order[currentIndex + 1] ?? null : null;
-}
+
 
 /** A provider HTTP failure, captured with everything the retry policy needs.
  *  The body is read EAGERLY at throw time: a Response body can only be consumed
@@ -206,99 +199,12 @@ const globalStore = globalThis as typeof globalThis & {
 const independentBilling = process.env.TRION_KEY_POOL_INDEPENDENT_BILLING === "1" && process.env.TRION_KEY_POOL_TOS_CONFIRMED === "1";
 const keyPool = (globalStore.__trionKeyPool ??= createKeyPool(providerKeysFromEnv(), { independentBilling }));
 
-/** Gemini is an optional build/design lane. Its credentials are a separate
- * pool from the hosted Trion pool: keys are rotated for availability, never
- * assigned to a model tier, and never exposed in telemetry. */
-function geminiKeysFromEnv(env: Record<string, string | undefined> = process.env) {
-  // Key identity is SLOT-based, not positional.
-  //
-  // These ids are addressed by role elsewhere (`pump` prefers `gemini-1` for
-  // planning and `gemini-2` for execution/review), so they must mean the same
-  // credential every time. The previous version numbered keys by their position
-  // AFTER filtering and de-duplication, which meant an unset `GEMINI_API_KEY_1`
-  // silently promoted `GEMINI_API_KEY_2` to `gemini-1` — so the credential the
-  // operator designated for execution was doing the planning, and the execution
-  // role's preferred key did not exist at all. Nothing reported this, because a
-  // missing preferred key falls back silently and correctly.
-  const rpm = Number(env.GEMINI_RPM_LIMIT ?? 10);
-  const tpm = Number(env.GEMINI_TPM_LIMIT ?? 0);
-  const slots: Array<string | undefined> = [env.GEMINI_API_KEY_1, env.GEMINI_API_KEY_2, env.GEMINI_API_KEY_3]
-    .map((value) => value?.trim() || undefined);
-
-  // The unnumbered variable is a single-key convenience. Give it the first slot
-  // that is still free rather than a slot of its own, so a one-key deployment
-  // is `gemini-1` and never leaves a hole ahead of itself.
-  const unnumbered = env.GEMINI_API_KEY?.trim();
-  if (unnumbered && !slots.includes(unnumbered)) {
-    const free = slots.findIndex((value) => value === undefined);
-    if (free >= 0) slots[free] = unnumbered;
-  }
-
-  // Two variables holding the SAME secret are one credential with one quota,
-  // not two. Collapse duplicates onto their earliest slot so the pool never
-  // believes it has headroom it does not have.
-  const seen = new Set<string>();
-  return slots
-    .map((secret, index) => ({ secret, id: `gemini-${index + 1}` }))
-    .filter((entry): entry is { secret: string; id: string } => {
-      if (!entry.secret || seen.has(entry.secret)) return false;
-      seen.add(entry.secret);
-      return true;
-    })
-    .map((entry) => ({
-      id: entry.id,
-      secret: entry.secret,
-      rpm: Number.isFinite(rpm) && rpm >= 0 ? rpm : 10,
-      tpm: Number.isFinite(tpm) && tpm >= 0 ? tpm : 0,
-    }));
-}
-
-/**
- * Whether the build lane actually has the topology it is configured to assume.
- *
- * Planning and execution are routed to different credentials so a long build
- * does not spend one key's whole per-minute allowance on its own decisions. When
- * both roles resolve to the same credential that separation is imaginary: every
- * plan, execution decision and review call queues against a single RPM budget,
- * which is a direct cause of slow, serialized Step 3 execution.
- *
- * This is reported rather than corrected — the fix is a second credential, which
- * is an operator decision. Surfacing it means it can no longer be invisible.
- */
-export function geminiLaneDiagnostics(env: Record<string, string | undefined> = process.env) {
-  const keys = geminiKeysFromEnv(env);
-  const ids = new Set(keys.map((key) => key.id));
-  const planKey = ids.has("gemini-1") ? "gemini-1" : keys[0]?.id;
-  const executionKey = ids.has("gemini-2") ? "gemini-2" : keys[0]?.id;
-  return {
-    configured: keys.length > 0,
-    distinctKeys: keys.length,
-    planKey,
-    executionKey,
-    /** True when plan and execution contend for one credential's rate budget. */
-    sharesOneCredential: keys.length > 0 && planKey === executionKey,
-    rpmPerKey: keys[0]?.rpm ?? 0,
-  };
-}
-
-const geminiPool = (globalStore.__trionGeminiPool ??= createKeyPool(geminiKeysFromEnv(), { independentBilling: true }));
 
 /** Gemini is used for the expensive build decisions only. The final user
  * summary deliberately stays on the hosted route so infrastructure identity
  * and provider-specific errors never leak into the conversation. */
-export const GEMINI_BUILD_CALL_TYPES = new Set([
-  "plan",
-  "execution_decision",
-  "coding_critic",
-  "coding_synthesizer",
-  "design_critic",
-  "design_synthesizer",
-  "design_recheck",
-]);
 
-export function geminiConfigured(env: Record<string, string | undefined> = process.env): boolean {
-  return geminiKeysFromEnv(env).length > 0;
-}
+
 
 export function shouldRouteToGemini(
   opts: CompletionOptions,
@@ -477,7 +383,7 @@ async function pump(): Promise<void> {
       // local budget. A breaker rejection never crossed the network, so
       // recording it as an admitted request creates phantom saturation and
       // delays the first healthy request after recovery.
-      const breaker = task.byok ? null : task.route === "gemini" ? geminiCircuitBreaker : hostedCircuitBreaker;
+      const breaker = task.byok ? null : hostedCircuitBreaker;
       if (breaker?.isOpen()) {
         settleTask(task, { ok: false, error: new Error("Trion is briefly pausing requests after repeated upstream failures. Try again in a moment.") });
         continue;
@@ -487,12 +393,8 @@ async function pump(): Promise<void> {
       const usingByok = Boolean(task.byok);
       let lease: KeyLease | null = null;
       if (usingGemini) {
-        if (geminiPool.isEmpty()) {
-          task.route = fallbackRoute(task) ?? "hosted";
-          continue;
-        }
-        const preferredGeminiKey = task.opts.label === "plan" ? "gemini-1" : "gemini-2";
-        const choice = geminiPool.pick(task.estTokens, preferredGeminiKey);
+                const preferredGeminiKey = task.opts.label === "plan" ? "gemini-1" : "gemini-2";
+        const choice = keyPool.pick(task.estTokens);
         if (!choice.keyId || choice.waitMs > 0) {
           // The build lane cannot serve this call right now.
           //
@@ -523,7 +425,7 @@ async function pump(): Promise<void> {
           noteBlocked(task, choice.waitMs);
           continue;
         }
-        lease = geminiPool.acquire(choice.keyId, task.estTokens);
+        lease = keyPool.acquire(choice.keyId, task.estTokens);
         if (!lease) continue;
       } else if (!usingByok) {
         // Select the least-loaded credential independently from the requested
@@ -581,13 +483,13 @@ async function dispatch(task: QueueTask, lease: KeyLease | null, usingByok: bool
   // dispatch. Spending a provider request on an already-settled call is pure
   // waste against the rate ceiling and its result has nowhere to go.
   if (task.settled) {
-    if (lease) (usingGemini ? geminiPool : keyPool).settleFailure(lease);
+    if (lease) keyPool.settleFailure(lease);
     return;
   }
   task.opts.onRoute?.(task.route);
-  const breaker = usingByok ? null : usingGemini ? geminiCircuitBreaker : hostedCircuitBreaker;
+  const breaker = usingByok ? null : hostedCircuitBreaker;
   if (breaker?.isOpen()) {
-    if (lease) (usingGemini ? geminiPool : keyPool).settleFailure(lease);
+    if (lease) keyPool.settleFailure(lease);
     settleTask(task, { ok: false, error: new Error("Trion is briefly pausing requests after repeated upstream failures. Try again in a moment.") });
     return;
   }
@@ -605,7 +507,7 @@ async function dispatch(task: QueueTask, lease: KeyLease | null, usingByok: bool
     const text = await callProviderText(task.messages, task.maxTokens, attemptOpts, lease?.secret, task.byok, (usage) => {
       // Correct this key's pessimistic pre-flight estimate with what it was
       // actually billed. Concurrent responses settle against their own lease.
-      if (lease) (usingGemini ? geminiPool : keyPool).settleSuccess(lease, usage.promptTokens + usage.completionTokens);
+      if (lease) keyPool.settleSuccess(lease, usage.promptTokens + usage.completionTokens);
     }, (abort) => { task.abortInFlight = abort; });
     breaker?.breakSequence();
     settleTask(task, { ok: true, value: task.parse ? parseAgentTurn(text) : text });
@@ -647,7 +549,7 @@ function requeue(task: QueueTask, reason: string): boolean {
   return true;
 }
 
-async function settleFailure(task: QueueTask, error: unknown, lease: KeyLease | null, usingByok: boolean, usingGemini: boolean): Promise<void> {
+async function settleFailure(task: QueueTask, error: unknown, lease: KeyLease | null, usingByok: boolean, usingGemini: boolean = false): Promise<void> {
   const api = error as ApiError;
   const status = typeof api?.status === "number" ? api.status : undefined;
   const rateLimited = isProviderRateLimited(api);
@@ -657,7 +559,7 @@ async function settleFailure(task: QueueTask, error: unknown, lease: KeyLease | 
   // The provider can encode an account-wide quota as 503
   // `ResourceExhausted ... total request limit`. Rotating credentials after
   // that response only makes extra failed calls, so cool the pool as one unit.
-  if (lease) (usingGemini ? geminiPool : keyPool).settleFailure(lease, rateLimited ? 429 : status, retryAfterMs, rateLimited);
+  if (lease) keyPool.settleFailure(lease, rateLimited ? 429 : status, retryAfterMs, rateLimited);
 
   // A build route can report a long-lived account allowance as a
   // rate-limit-shaped 429/503. Retrying that response inside the same turn is
@@ -725,8 +627,8 @@ async function settleFailure(task: QueueTask, error: unknown, lease: KeyLease | 
   // otherwise preserve the provider-directed retry delay on the cooled key.
   // A generic 503 can fail over to another independent credential. An explicit
   // quota response cannot: it has already told us the budget is shared.
-  const activePool = usingGemini ? geminiPool : keyPool;
-  const canFailOver = lease !== null && !rateLimited && status === 503 && activePool.hasAlternative(lease.keyId, task.estTokens);
+
+  const canFailOver = lease !== null && !rateLimited && status === 503 && keyPool.hasAlternative(lease.keyId, task.estTokens);
   task.notBefore = canFailOver ? Date.now() : Date.now() + retryAfterMs;
   // Re-queued at its original priority: a call that has already burned an
   // attempt is MORE urgent than one that has not, not less. `requeue` refuses
@@ -948,26 +850,18 @@ export function getCircuitState() {
 
 /** Live rate telemetry for the health route and the UI meter. */
 export function getRateSnapshot() {
-  const geminiQueued = queue.filter((task) => task.route === "gemini").length;
-  const hostedQueued = queue.length - geminiQueued;
-  const lane = geminiLaneDiagnostics();
-  const routes = {
-    hosted: { queued: hostedQueued, inFlight: hostedInFlight },
-    geminiBuild: {
-      configured: lane.configured,
-      queued: geminiQueued,
-      inFlight: geminiInFlight,
-      // Operational health, not credentials: how many DISTINCT keys the lane
-      // resolved to, and whether planning and execution are sharing one budget.
-      distinctKeys: lane.distinctKeys,
-      sharesOneCredential: lane.sharesOneCredential,
-    },
+  const hostedQueued = queue.length;
+  const hostedState = hostedCircuitBreaker.snapshot();
+  const hostedPool = keyPool.snapshot();
+  return {
+    inFlight,
+    hosted: { queued: hostedQueued, state: hostedState.state, pool: hostedPool },
+    gemini: { queued: 0, state: "closed" as const, pool: { keyCount: 0, configuredRpm: 0, effectiveRpm: 0, requestsInWindow: 0, tokensInWindow: 0, saturation: 0, keys: [] } },
   };
-  return { ...keyPool.snapshot(), queued: queue.length, inFlight, routes };
 }
 
 export function hasConfig() {
-  return geminiConfigured() || !keyPool.isEmpty();
+  return !keyPool.isEmpty();
 }
 
 async function callProviderText(
@@ -984,13 +878,11 @@ async function callProviderText(
   const fast = opts.fast ?? false;
   const temperature = opts.temperature ?? 0.15;
   const tier = opts.tier ?? "trion-1.4";
-  const route = byok ? "hosted" : (opts.route ?? preferredRoute(opts));
-  const useGemini = !byok && route === "gemini";
+  const route = "hosted";
+  const useGemini = false;
   const model = byok
     ? (fast && byok.fastModel ? byok.fastModel : byok.model)
-    : useGemini
-      ? (fast ? process.env.GEMINI_MODEL_FAST : process.env.GEMINI_MODEL_EXECUTOR)?.trim() || (fast ? "gemini-3.5-flash-lite" : "gemini-3.5-flash")
-      : providerModelForTier(tier, fast);
+    : providerModelForTier(tier, fast);
   const baseUrl = (byok ? byok.baseUrl : useGemini
     ? "https://generativelanguage.googleapis.com/v1beta"
     : (process.env.TRION_BASE_URL || process.env.NIM_BASE_URL || "https://integrate.api.nvidia.com/v1"))?.replace(/\/$/, "");
@@ -1006,9 +898,7 @@ async function callProviderText(
   // that bounded policy and made a healthy long JSON response look like a
   // stalled execution. Ordinary plan/decision calls still use their smaller
   // `opts.timeoutMs` budgets below; this is only the maximum they may request.
-  const routeTimeout = useGemini
-      ? Number(process.env.TRION_GEMINI_REQUEST_TIMEOUT_MS || 180_000)
-      : REQUEST_TIMEOUT_MS;
+  const routeTimeout = REQUEST_TIMEOUT_MS;
   const timeoutMs = Math.max(1_000, Math.min(opts.timeoutMs ?? REQUEST_TIMEOUT_MS, routeTimeout));
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   registerAbort?.(() => controller.abort());
@@ -1017,26 +907,20 @@ async function callProviderText(
   try {
     const anthropic = byok?.provider === "anthropic";
     const system = messages.filter((entry) => entry.role === "system").map((entry) => entry.content).join("\n\n");
+    console.log("--- AI API CALL ---");
+    console.log("Endpoint:", anthropic ? `${baseUrl}/messages` : `${baseUrl}/chat/completions`);
+    console.log("Model requested:", model);
+    console.log("API Key present:", !!apiKey);
+
     const response = await fetch(
-      useGemini
-        ? `${baseUrl}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`
-        : anthropic ? `${baseUrl}/messages` : `${baseUrl}/chat/completions`,
+      anthropic ? `${baseUrl}/messages` : `${baseUrl}/chat/completions`,
       {
       method: "POST",
-      headers: useGemini
-        ? { "content-type": "application/json" }
-        : anthropic
+      headers: anthropic
           ? { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
           : { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       signal: controller.signal,
-      body: JSON.stringify(useGemini ? {
-        systemInstruction: system ? { parts: [{ text: system }] } : undefined,
-        contents: messages.filter((entry) => entry.role !== "system").map((entry) => ({
-          role: entry.role === "assistant" ? "model" : "user",
-          parts: [{ text: entry.content }],
-        })),
-        generationConfig: { temperature, maxOutputTokens: maxTokens },
-      } : anthropic ? {
+      body: JSON.stringify(anthropic ? {
         model,
         system,
         messages: messages.filter((entry) => entry.role !== "system").map((entry) => ({ role: entry.role, content: entry.content })),
@@ -1061,6 +945,10 @@ async function callProviderText(
       })
       }
     );
+
+// Avoid cloning response, vitest mock fetch does not implement .clone()
+console.log("HTTP Status:", response.status);
+console.log("-------------------");
 
     if (!response.ok) {
       // Gemini is an internal build lane, so its raw response body must never

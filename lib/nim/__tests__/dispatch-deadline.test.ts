@@ -55,11 +55,11 @@ function okResponse(payload: unknown): Response {
 /** A valid Gemini-shaped success carrying a schema-valid AgentTurn. */
 function geminiTurn(): Response {
   return okResponse({
-    candidates: [{
-      content: { parts: [{ text: JSON.stringify({ thought: "ok", action: "read_file", action_input: { path: "a.ts" }, done: false }) }] },
-      finishReason: "STOP",
+    choices: [{
+      message: { content: JSON.stringify({ thought: "ok", action: "read_file", action_input: { path: "a.ts" }, done: false }) },
+      finish_reason: "stop",
     }],
-    usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+    usage: { prompt_tokens: 10, completion_tokens: 5 },
   });
 }
 
@@ -81,9 +81,7 @@ beforeEach(() => {
   process.env = {
     ...ORIGINAL_ENV,
     TRION_API_KEY: "hosted-test-key",
-    GEMINI_API_KEY_1: "gemini-test-key-1",
-    GEMINI_API_KEY_2: "gemini-test-key-2",
-    GEMINI_MODEL_EXECUTOR: "gemini-test-model",
+
     // Remove dispatch pacing so the test measures the deadline, not the pacer.
     TRION_MIN_INTERVAL_MS: "0",
     TRION_RPM_LIMIT: "1000",

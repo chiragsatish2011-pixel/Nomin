@@ -24,7 +24,8 @@ export async function POST(req: Request) {
   let payload: unknown;
   try {
     payload = await req.json();
-  } catch {
+  } catch (err) {
+          console.error("Agent error:", err);
     return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
   }
 
@@ -67,7 +68,8 @@ export async function POST(req: Request) {
           if (event.type === "status") currentStatus = event.status;
           try {
             controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
-          } catch {
+          } catch (error) {
+          console.error("Agent error:", error);
             closed = true;
           }
         };

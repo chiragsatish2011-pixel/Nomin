@@ -10,13 +10,13 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ready: hasConfig(),
     requestWindow: {
-      used: rate.requestsInWindow,
-      limit: rate.effectiveRpm,
-      saturation: rate.saturation,
+      used: rate.hosted.pool.requestsInWindow,
+      limit: rate.hosted.pool.effectiveRpm,
+      saturation: rate.hosted.pool.saturation,
     },
     activity: {
-      planning: rate.routes.geminiBuild.queued,
-      building: rate.routes.geminiBuild.queued + rate.routes.geminiBuild.inFlight,
+      planning: rate.hosted.queued,
+      building: rate.hosted.queued + rate.inFlight,
     },
     ...capacityOverview(new Date(), sessionId),
   });
