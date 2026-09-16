@@ -32,7 +32,7 @@ describe("model tier routing", () => {
 
   it("preserves the existing 1.4 defaults", () => {
     const environment = {};
-    expect(providerModelForTier("trion-1.4", false, environment)).toBe("meta/llama2-70b");
-    expect(providerModelForTier("trion-1.4", true, environment)).toBe("meta/llama2-70b");
+    expect(providerModelForTier("trion-1.4", false, environment)).toBe("meta/llama-3.2-11b-vision-instruct");
+    expect(providerModelForTier("trion-1.4", true, environment)).toBe("meta/llama-3.2-11b-vision-instruct");
   });
 });

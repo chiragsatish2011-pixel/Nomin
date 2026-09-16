@@ -532,11 +532,14 @@ summary:focus-visible {
 }
 
 .heroMessage h2 {
-  font-size: 40px;
-  font-weight: 500;
-  line-height: 1.2;
-  max-width: 720px;
+  font-family: var(--font-display) !important;
+  font-size: 48px !important;
+  font-weight: 700 !important;
+  line-height: 1.17 !important;
+  letter-spacing: -1px !important;
+  color: #101114 !important;
 }
+
 
 .heroSub {
   color: var(--secondary);
@@ -1244,9 +1247,7 @@ pre {
     gap: 30px;
   }
 
-  .heroMessage h2 {
-    font-size: 31px;
-  }
+
 
   .heroSub,
   .userBubble p,
@@ -2315,7 +2316,16 @@ pre {
   margin: 22px 0 8px;
 }
 
-.md h3 { font-size: 17px; }
+.md h3 {
+  font-family: var(--font-display) !important;
+  font-size: 28px !important;
+  font-weight: 700 !important;
+  line-height: 1.29 !important;
+  letter-spacing: -0.5px !important;
+  color: #101114 !important;
+}
+
+h3 { font-size: 17px; }
 .md h4 { font-size: 15.5px; }
 .md h5,
 .md h6 { font-size: 14.5px; }
@@ -3110,12 +3120,7 @@ pre {
 }
 
 .landingCard h1,
-.heroMessage h2 {
-  /* Papyrus runs small and textured for its point size; a touch more line-height
-     and a hair of tracking keeps a large heading from looking crowded. */
-  letter-spacing: 0.005em;
-  line-height: 1.22;
-}
+
 
 /* ===========================================================================
  * LANDING CARD
@@ -4949,6 +4954,7 @@ pre {
 .chatScroll { padding-top: 34px; }
 .threadColumn { gap: 28px; max-width: 720px; }
 .heroMessage { padding: clamp(46px, 10vh, 110px) 8px 8px; text-align: center; }
+
 .heroMessage h2 { color: var(--crisp-white); font-size: clamp(30px, 4vw, 42px); font-weight: 620; letter-spacing: -.035em; margin: 0 auto; }
 .heroSub { font-size: 15px; line-height: 1.65; margin: 0 auto; max-width: 510px; }
 .assistantTurn { padding-left: 0; }
@@ -5227,7 +5233,16 @@ pre {
   .topBarActions { gap: 5px; }.topBarActions .accountButton { min-width: 32px; overflow: hidden; padding: 0 8px; white-space: nowrap; }.topBarActions .accountButton svg { flex: 0 0 auto; }
   .chatScroll { padding: 22px 14px calc(188px + env(safe-area-inset-bottom)); }
   .threadColumn { gap: 22px; max-width: 100%; }
-  .heroMessage { padding: 34px 4px 8px; }.heroMessage h2 { font-size: 30px; }.heroSub { font-size: 14px; }
+  .heroMessage { padding: 34px 4px 8px; }.heroMessage h2 {
+  font-family: var(--font-display) !important;
+  font-size: 48px !important;
+  font-weight: 700 !important;
+  line-height: 1.17 !important;
+  letter-spacing: -1px !important;
+  color: #101114 !important;
+}
+
+.heroMessage h2 { font-size: 30px; }.heroSub { font-size: 14px; }
   .userBubble { max-width: 92%; padding: 11px 13px; }.userBubble p, .assistantCopy p { font-size: 15px; line-height: 1.58; }
   .assistantTurn { gap: 14px; }.agentPhase { min-height: 58px; }
   .composerDock { padding: 34px 10px calc(10px + env(safe-area-inset-bottom)); }
@@ -5256,3 +5271,83 @@ pre {
 .agentPhase.error ~ * .capacityChip, body:has(.agentPhase.error) .capacityChip, body:has(.pausedNote) .capacityChip { animation: none !important; transition: none !important; }
 .allowanceModal { align-items: center; background: rgb(var(--shadow-rgb) / .42); display: flex; inset: 0; justify-content: center; padding: 20px; position: fixed; z-index: 200; backdrop-filter: blur(14px); }
 .allowanceCard { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 20px; box-shadow: var(--panel-shadow); color: var(--crisp-white); display: grid; gap: 14px; max-width: 520px; padding: clamp(26px, 5vw, 42px); width: 100%; }.allowanceCard > p { color: var(--sea-green); font-size: 11px; font-weight: 750; letter-spacing: .09em; margin: 0; text-transform: uppercase; }.allowanceCard h2 { font-family: var(--font-display); font-size: clamp(30px, 5vw, 44px); font-weight: 500; letter-spacing: -.035em; line-height: 1.05; margin: 0; }.allowanceCard > span { color: var(--muted-ink); font-size: 14px; line-height: 1.6; }.allowanceCard > div { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 7px; }.allowanceCard a, .allowanceCard button { border: 1px solid var(--outline-variant); border-radius: 999px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 680; padding: 10px 15px; text-decoration: none; }.allowanceCard a { background: var(--crisp-white); color: var(--canvas); }.allowanceCard button { background: transparent; color: var(--muted-ink); }
+
+/* Kraken Component Styles */
+button, .button {
+  border-radius: 12px !important;
+}
+
+h1, h2, h3, .heroMessage h2 {
+  font-family: var(--font-display) !important;
+  font-size: 48px !important;
+  font-weight: 700 !important;
+  line-height: 1.17 !important;
+  letter-spacing: -1px !important;
+  color: #101114 !important;
+}
+
+
+
+
+body {
+  color: #101114 !important;
+  background-color: #ffffff !important;
+}
+
+.userBubble, .assistantTurn, .tracePanel, .taskTree {
+  background-color: #ffffff !important;
+  color: #101114 !important;
+  box-shadow: rgba(0,0,0,0.03) 0px 4px 24px !important;
+  border-radius: 12px !important;
+  border: 1px solid #dedee5 !important;
+}
+
+.assistantCopy p, .userBubble p {
+  color: #101114 !important;
+}
+
+.modelConnectionActive {
+  background: rgba(133,91,251,0.16) !important;
+  color: #7132f5 !important;
+}
+
+.topBarActions .accountButton, .connectionChip {
+  background: #ffffff !important;
+  color: #101114 !important;
+  border: 1px solid #dedee5 !important;
+}
+
+.activateConnection {
+  background: #7132f5 !important;
+  color: #ffffff !important;
+}
+
+.composerSubmit {
+  background: #7132f5 !important;
+  border-radius: 12px !important;
+}
+
+.composerShell {
+  background: #ffffff !important;
+  border-color: #5741d8 !important;
+}
+
+textarea {
+  color: #101114 !important;
+}
+
+.statusBadge.success {
+  background: rgba(20,158,97,0.16) !important;
+  color: #026b3f !important;
+  border-radius: 6px !important;
+}
+
+.statusBadge.neutral {
+  background: rgba(104,107,130,0.12) !important;
+  color: #484b5e !important;
+  border-radius: 8px !important;
+}
+
+a {
+  color: #7132f5 !important;
+}
