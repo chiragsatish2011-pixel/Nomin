@@ -1,6 +1,6 @@
 # Nomin/Trion Production Evaluation Framework
 
-**3 Levels × 3 Depths + Security Evaluation** — runnable end-to-end with real model calls through the existing key-pool router.
+**3 Levels × 3 Depths + Security Evaluation** — runnable end-to-end with real model calls through the existing single-key provider lane.
 
 ## Prerequisites
 
@@ -70,7 +70,7 @@ node eval/security/run.mjs --tag baseline
 node eval/trajectory/run.mjs --tag baseline --cases=T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11
 
 # COMPONENT — Isolated Component Tests (no server needed)
-# Classifier (24 cases), heuristics, key-pool (5 tests), rate governor (4 tests), critics (3 tests)
+# Classifier (24 cases), heuristics, rate governor, rate governor (4 tests), critics (3 tests)
 # Duration: ~30 seconds
 node eval/component/run.mjs --tag baseline
 ```
@@ -98,7 +98,7 @@ All commands write timestamped JSON to `eval/results/`:
 | `online-<tag>-<ts>.json` | Online | Concurrent load metrics + success rates by mode |
 | `security-<tag>-<ts>.json` | Security | 5-vector pass/fail with reproduction steps |
 | `trajectory-<tag>-<ts>.json` | Trajectory | 8 assertions × 11 cases = 88 checks |
-| `component-<tag>-<ts>.json` | Component | Classifier, heuristics, key-pool, rate governor, critics |
+| `component-<tag>-<ts>.json` | Component | Classifier, heuristics, rate governor, critics |
 
 ## Evaluation Framework Structure
 
@@ -121,7 +121,7 @@ eval/
 │   ├── assertions.mjs          # 8 trajectory assertions on tool_trace
 │   └── run.mjs                 # Trajectory runner
 ├── component/
-│   ├── tests.mjs               # Isolated classifier, key-pool, rate governor, critic tests
+│   ├── tests.mjs               # Isolated classifier, rate governor, critic tests
 │   └── run.mjs                 # Component runner
 ├── online/
 │   └── runner.mjs              # Concurrent load simulation
@@ -130,10 +130,10 @@ eval/
 
 ## Constraints Enforced
 
-- ✅ All live calls route through existing key-pool router (no bypass)
+- ✅ All live calls route through existing single-key provider lane (no bypass)
 - ✅ No fabricated results — tests fail loudly if server/model unavailable
 - ✅ No Nemotron/NIM strings in any output (sanitized by gateway)
-- ✅ Background-process priority: eval yields to real traffic via key-pool
+- ✅ Background-process priority: eval yields to real traffic via the single-key lane
 - ✅ Calibration required before LLM-as-Judge grading
 - ✅ Security critical findings flagged at top of report
 

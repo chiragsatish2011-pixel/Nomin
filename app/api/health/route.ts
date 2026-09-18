@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionCount } from "@/lib/agent/session-store";
 import { getCircuitState, getQueueDepth, getRateSnapshot, hasConfig } from "@/lib/nim/internal-client";
-import { availableModelTiers } from "@/lib/agent/model-tiers";
+import { availableModelTiers, hasProviderCredential } from "@/lib/agent/model-tiers";
 import { getPendingApprovalCount, getPendingExecutionCount } from "@/lib/agent/execution/bridge";
 
 export async function GET() {
@@ -24,7 +24,11 @@ export async function GET() {
     modelCircuit: getCircuitState(),
     pendingApprovals: getPendingApprovalCount(),
     pendingBrowserExecutions: getPendingExecutionCount(),
-    availableModels: availableModelTiers(),
+    // A tier label is only genuinely selectable when this deployment also holds
+    // a credential able to serve it. Reporting ["trion-1.4"] with zero keys is
+    // what made a completely unconfigured server look healthy.
+    availableModels: hasProviderCredential() ? availableModelTiers() : [],
+    providerCredentialPresent: hasProviderCredential(),
     rate: getRateSnapshot()
   });
 }

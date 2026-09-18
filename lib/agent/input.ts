@@ -7,7 +7,7 @@ import type { AgentMode, AgentModel, AttachedContext, ConversationTurn, NormalIn
 import { getSession } from "./session-store";
 import { perf } from "./perf";
 import { isProtectedTurn } from "./context";
-import { AGENT_MODEL_TIERS, isModelTierAvailable } from "./model-tiers";
+import { AGENT_MODEL_TIERS, hasProviderCredential, isModelTierAvailable } from "./model-tiers";
 import { isSensitiveWorkspacePath } from "./path-policy";
 import { validateClientCheckpoint, type ClientCheckpoint } from "./resume-checkpoint";
 import type { ByokProviderConfig } from "@/lib/nim/byok-context";
@@ -161,6 +161,15 @@ export function parseChatRequest(payload: unknown): ValidatedChatRequest {
     const maxContextChars = typeof payload.byok.maxContextChars === "number" && Number.isFinite(payload.byok.maxContextChars)
       ? Math.max(2_000, Math.min(200_000, Math.floor(payload.byok.maxContextChars))) : undefined;
     byok = { provider, apiKey, baseUrl, model: modelName, fastModel, maxContextChars };
+  }
+
+  // Fail at the door, with the real reason, when this deployment can reach no
+  // model at all. Previously such a request was accepted and only failed many
+  // layers down, where the cause was rewritten into generic copy.
+  if (!byok && !hasProviderCredential()) {
+    throw new InputValidationError(
+      "No model provider is configured on this server. Set TRION_API_KEY in .env.local (and restart), or connect your own provider in Settings."
+    );
   }
 
   return {

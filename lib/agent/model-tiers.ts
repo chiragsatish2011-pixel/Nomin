@@ -14,8 +14,25 @@ export type ModelEnvironment = Record<string, string | undefined>;
 export const AGENT_MODEL_TIERS: readonly AgentModel[] = ["trion-1.4", "trion-1.9", "trion-2.3"];
 export type AgentRole = "planner" | "executor" | "verifier";
 
+// Verified live against the configured endpoint on 2026-09-18.
+//
+// PRIMARY is the deep-reasoning model: execution decisions and full-file code
+// authoring (`fast: false`). PRIMARY is deliberately the largest model here —
+// this is an agentic coding product, and the quality of the written code is the
+// product.
+//
+// FAST serves classification, planning, synthesis and the review chain
+// (`fast: true`). It is NOT a throwaway tier: planning runs here, so it has to
+// be genuinely capable. Measured on a planning prompt: 11.8s / 11.9s, clean
+// `stop`, valid plan JSON.
+//
+// The previous FAST default, `nvidia/nemotron-3-nano-30b-a3b`, was DEAD — the
+// endpoint answers HTTP 410 Gone, end-of-life 2026-09-01. Because planning is a
+// fast-tier call, that alone broke every build request on a default install.
+// `nvidia/nemotron-3.5-lightning-30b-a3b` was also evaluated and rejected: it
+// does not stop (finish_reason "length" at a 1200-token cap on both runs).
 const DEFAULT_PRIMARY_MODEL = "nvidia/nemotron-3-ultra-550b-a55b";
-const DEFAULT_FAST_MODEL = "nvidia/nemotron-3-nano-30b-a3b";
+const DEFAULT_FAST_MODEL = "nvidia/nemotron-3-super-120b-a12b";
 
 /** `null` rather than `undefined`, matching what `configured()` returns: an
  *  env var that is absent and one that is set to whitespace are the same thing
@@ -96,4 +113,24 @@ export function tierForRole(
     ? configuredTier as AgentModel
     : selected;
   return isModelTierAvailable(candidate, environment) ? candidate : selected;
+}
+
+/**
+ * Does this deployment hold ANY server-side credential able to answer a turn?
+ *
+ * This is deliberately separate from `isModelTierAvailable`, which answers a
+ * different question ("is a model id configured for this label?") and returns
+ * true for trion-1.4 unconditionally. Conflating the two is what let the app
+ * advertise `availableModels: ["trion-1.4"]` and accept every chat request
+ * while holding zero keys — so every non-preset message died deep in the stack
+ * as a generic "Trion paused" instead of a configuration error at the door.
+ *
+ * BYOK requests supply their own credential and are checked by the caller.
+ */
+export function hasProviderCredential(environment: ModelEnvironment = process.env): boolean {
+  // ONE supported name. The numbered pool variables and the Gemini lane keys
+  // are gone from the codebase, so accepting them here would report a
+  // credential the dispatcher cannot actually use. `NIM_API_KEY` survives only
+  // as a rename alias so an older deployment does not lose its key on upgrade.
+  return Boolean(configured(environment.TRION_API_KEY) ?? configured(environment.NIM_API_KEY));
 }

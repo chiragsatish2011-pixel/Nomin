@@ -19,7 +19,10 @@ const GROUPS = {
     "lib/agent/__tests__/classifier-regression.test.ts",
     "lib/agent/__tests__/classifier-override.test.ts",
   ],
-  keyPool: ["lib/agent/__tests__/key-pool.test.ts", "lib/agent/__tests__/rate-governor.test.ts"],
+  // The multi-key pool was replaced by a single-credential lane, so
+  // key-pool.test.ts no longer exists. Rate pacing is still the thing worth
+  // measuring here, and it is now the lane's only throughput control.
+  rateLane: ["lib/agent/__tests__/rate-governor.test.ts"],
   critics: ["lib/agent/__tests__/quality-chain.test.ts", "lib/agent/__tests__/coherence.test.ts"],
 };
 

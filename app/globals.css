@@ -1,32 +1,3 @@
-@font-face {
-  font-family: "Georgia Nomin";
-  src: url("/fonts/georgia.ttf") format("truetype");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Georgia Nomin";
-  src: url("/fonts/georgiai.ttf") format("truetype");
-  font-weight: 400;
-  font-style: italic;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Georgia Nomin";
-  src: url("/fonts/georgiab.ttf") format("truetype");
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Georgia Nomin";
-  src: url("/fonts/georgiaz.ttf") format("truetype");
-  font-weight: 700;
-  font-style: italic;
-  font-display: swap;
-}
-
 /* Self-hosted rather than fetched from the font CDN.
  *
  * These two rules previously pointed at a hardcoded, VERSIONED gstatic binary
@@ -67,43 +38,72 @@
 :root {
   color-scheme: light;
 
-  /* Light is Nomin's default: a clear white canvas, indigo ink, and the
-     turquoise/green from the logo reserved for true interaction. */
-  --base-rgb: 251 251 255;
-  --base-deep-rgb: 245 244 252;
-  --ink-rgb: 31 22 76;
-  --accent-rgb: 25 169 159;
-  --danger-rgb: 191 65 91;
-  --shadow-rgb: 42 29 91;
+  /* Kraken design system.
+   * Purple #7132f5 commands; white surfaces; a cool blue-grey neutral scale;
+   * near-black #101114 ink. Everything below resolves through these tokens, so
+   * the whole interface retheming is this block plus its dark counterpart. */
+  --base-rgb: 255 255 255;
+  --base-deep-rgb: 250 250 252;
+  --ink-rgb: 16 17 20;
+  --accent-rgb: 113 50 245;
+  --danger-rgb: 199 58 58;
+  --shadow-rgb: 16 24 40;
 
-  --navy-black: #fbfbff;
-  --ocean-navy: #f5f4fc;
-  --crisp-white: #1f164c;
-  --sea-green: #19a99f;
-  --deep-teal-black: #efedf8;
-  --soft-coral: #bf415b;
-  --secondary: #6d668b;
+  /* Kraken purple scale */
+  --kraken-purple: #7132f5;
+  --kraken-purple-dark: #5741d8;
+  --kraken-purple-deep: #5b1ecf;
+  --kraken-purple-subtle: rgba(133, 91, 251, 0.16);
+
+  /* Neutrals */
+  --kraken-cool-gray: #686b82;
+  --kraken-silver-blue: #9497a9;
+  --kraken-border: #dedee5;
+
+  /* Semantic */
+  --kraken-green: #149e61;
+  --kraken-green-dark: #026b3f;
+
+  /* Legacy token names, repointed at the Kraken palette. Keeping the names
+     means the retheme is one block rather than 5,000 lines of find-replace. */
+  --navy-black: #ffffff;
+  --ocean-navy: #fafafc;
+  --crisp-white: #101114;
+  --sea-green: #7132f5;
+  --deep-teal-black: #f4f4f7;
+  --soft-coral: #c73a3a;
+  --secondary: #686b82;
+  --muted-ink: #9497a9;
   --canvas: var(--navy-black);
   --surface: #ffffff;
-  --primary: #1f164c;
+  --primary: #101114;
   --primary-foreground: #ffffff;
 
-  --surface-inset: #f5f3fb;
+  --surface-inset: #fafafc;
   --danger-text: #8c1f1f;
   --danger-strong: #c73a3a;
 
-  --glass-blur: 20px;
-  --glass-rim: rgb(var(--ink-rgb) / 0.14);
-  --panel-shadow: 0 12px 38px rgb(var(--shadow-rgb) / 0.10);
+  /* Depth: whisper-level only. */
+  --glass-blur: 0px;
+  --glass-rim: var(--kraken-border);
+  --panel-shadow: rgba(0, 0, 0, 0.03) 0px 4px 24px;
+  --micro-shadow: rgba(16, 24, 40, 0.04) 0px 1px 4px;
 
-  --outline-variant: rgb(var(--ink-rgb) / 0.15);
-  --surface-variant: rgb(var(--ink-rgb) / 0.045);
-  --surface-strong: rgb(var(--ink-rgb) / 0.075);
+  --outline-variant: var(--kraken-border);
+  --surface-variant: rgba(148, 151, 169, 0.08);
+  --surface-strong: rgba(104, 107, 130, 0.12);
   --calm-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Button radius is capped at 12px by the design system — never pill. */
+  --radius-button: 12px;
+  --radius-card: 16px;
+  --radius-badge: 8px;
+
+  /* The mark keeps its own palette: the SVG is preserved as-is. */
   --jelly-outline: #281052;
-  --jelly-violet: #4d2694;
-  --jelly-shell: #8b67d8;
-  --jelly-aqua: #4fbdb2;
+  --jelly-violet: #5b1ecf;
+  --jelly-shell: #855bfb;
+  --jelly-aqua: #7132f5;
   --jelly-eye: #160b32;
   --jelly-highlight: #ffffff;
 }
@@ -111,43 +111,64 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --base-rgb: 19 17 27;
-  --base-deep-rgb: 27 24 38;
-  --ink-rgb: 244 242 249;
-  --accent-rgb: 58 197 181;
+  /* The same purple, carried onto a near-black canvas. Purple is lifted to
+     #855bfb so it keeps AA contrast against a dark surface. */
+  --base-rgb: 16 17 20;
+  --base-deep-rgb: 24 25 30;
+  --ink-rgb: 244 244 247;
+  --accent-rgb: 133 91 251;
   --danger-rgb: 250 137 158;
-  --shadow-rgb: 5 4 9;
+  --shadow-rgb: 0 0 0;
 
-  --navy-black: #13111b;
-  --ocean-navy: #1b1826;
-  --crisp-white: #f4f2f9;
-  --sea-green: #3ac5b5;
-  --deep-teal-black: #0e0d14;
+  --kraken-purple: #855bfb;
+  --kraken-purple-dark: #7132f5;
+  --kraken-purple-deep: #5b1ecf;
+  --kraken-purple-subtle: rgba(133, 91, 251, 0.20);
+
+  --kraken-cool-gray: #9497a9;
+  --kraken-silver-blue: #9497a9;
+  --kraken-border: #2a2b33;
+
+  --kraken-green: #2fbd7e;
+  --kraken-green-dark: #7fe3b4;
+
+  --navy-black: #101114;
+  --ocean-navy: #18191e;
+  --crisp-white: #f4f4f7;
+  --sea-green: #855bfb;
+  --deep-teal-black: #0b0c0e;
   --soft-coral: #fa899e;
-  --secondary: #b8b3c2;
+  --secondary: #9497a9;
+  --muted-ink: #9497a9;
   --canvas: var(--navy-black);
-  --surface: #1a1622;
-  --primary: #f4f2f9;
-  --primary-foreground: #17131f;
+  --surface: #18191e;
+  --primary: #f4f4f7;
+  --primary-foreground: #101114;
 
-  --surface-inset: #1b1826;
+  --surface-inset: #18191e;
   --danger-text: #ffd4d4;
   --danger-strong: #ff8d8d;
+
+  --glass-blur: 0px;
+  --glass-rim: var(--kraken-border);
+  --panel-shadow: rgba(0, 0, 0, 0.24) 0px 4px 24px;
+  --micro-shadow: rgba(0, 0, 0, 0.20) 0px 1px 4px;
+
+  --outline-variant: var(--kraken-border);
+  --surface-variant: rgba(148, 151, 169, 0.10);
+  --surface-strong: rgba(148, 151, 169, 0.16);
+  --calm-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --radius-button: 12px;
+  --radius-card: 16px;
+  --radius-badge: 8px;
+
   --jelly-outline: #cfc0f2;
-  --jelly-violet: #5c3e9d;
-  --jelly-shell: #9775d8;
-  --jelly-aqua: #61c9bb;
+  --jelly-violet: #7132f5;
+  --jelly-shell: #a488f5;
+  --jelly-aqua: #855bfb;
   --jelly-eye: #171121;
   --jelly-highlight: #ffffff;
-
-  --glass-blur: 24px;
-  --glass-rim: rgb(var(--ink-rgb) / 0.10);
-  --panel-shadow: 0 18px 50px rgb(var(--shadow-rgb) / 0.35);
-
-  --outline-variant: rgb(var(--ink-rgb) / 0.10);
-  --surface-variant: rgb(var(--ink-rgb) / 0.05);
-  --surface-strong: rgb(var(--ink-rgb) / 0.085);
-  --calm-ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 * {
@@ -163,18 +184,19 @@ body {
 /* ---------------------------------------------------------------------------
  * Typeface
  *
- * The hybrid: Papyrus carries the display voice (headings, brand, the landing
- * card), Georgia carries everything you actually READ. That split is deliberate
- * — Papyrus has no bold or italic worth using and its texture fights long
- * paragraphs, so confining it to short display strings is the only way it reads
- * as a choice rather than an accident. Regular weight only, as specified.
+ * Kraken pairs a proprietary display face (Kraken-Brand) with a UI face
+ * (Kraken-Product). Neither is redistributable, so we use the fallback stacks
+ * the design system itself specifies.
  *
- * Both are variables. Changing the display face is one line here and nothing
- * else in this 2,800-line file needs to know.
+ * Nothing is downloaded for either stack. That is deliberate: this app sends
+ * `Cross-Origin-Embedder-Policy: require-corp`, which makes a cross-origin
+ * webfont (Google Fonts) fail to load rather than degrade, and the previous
+ * build shipped 847KB of Georgia TTFs that no rule ever referenced. System
+ * stacks render instantly and cost nothing.
  * ------------------------------------------------------------------------- */
 :root {
-  --font-display: ui-sans-serif, "Avenir Next", "Segoe UI", Arial, sans-serif;
-  --font-body: ui-sans-serif, "Avenir Next", "Segoe UI", Arial, sans-serif;
+  --font-display: "IBM Plex Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-body: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 body {
@@ -211,47 +233,6 @@ summary:focus-visible {
   position: relative;
 }
 
-.ambientCanvas {
-  height: 100vh;
-  inset: 0;
-  opacity: 1;
-  pointer-events: none;
-  position: fixed;
-  transition: opacity 1.6s ease;
-  width: 100vw;
-  z-index: 0;
-}
-
-.zenApp.introActive .ambientCanvas {
-  opacity: 0;
-}
-
-.ambientVeil {
-  background:
-    radial-gradient(ellipse at 58% 78%, rgb(var(--accent-rgb) / 0.11), transparent 35%),
-    linear-gradient(180deg, rgb(var(--base-rgb) / 0.10), rgb(var(--base-rgb) / 0.92));
-  inset: 0;
-  pointer-events: none;
-  position: fixed;
-  z-index: 1;
-}
-
-/* The intro is a moment before the app, not part of it — it adapts to the
- * current theme so there's no flash when the interface appears. */
-.bootIntro {
-  background: var(--navy-black);
-  inset: 0;
-  opacity: 1;
-  position: fixed;
-  transition: opacity 0.55s ease;
-  z-index: 100;
-}
-
-.bootIntro.revealing {
-  opacity: 0;
-  pointer-events: none;
-}
-
 /* Deterministic route loading shell (app/loading.tsx) so hydration never
  * paints a blank page while the client boots. */
 .loadingShell {
@@ -270,52 +251,7 @@ summary:focus-visible {
   }
 }
 
-.bootVideo,
-.bootTint {
-  height: 100%;
-  inset: 0;
-  position: absolute;
-  width: 100%;
-}
-
-/* Zoomed OUT, not filled.
- *
- * "cover" cropped the frame to the viewport, so the mark filled the screen and
- * read as a game splash. Contained and scaled down, the same footage becomes a
- * small mark floating in a lot of dark space — which is what makes an intro
- * feel considered instead of loud. */
-.bootVideo {
-  object-fit: contain;
-  object-position: center;
-  transform: scale(0.44);
-}
-
-@media (max-width: 720px) {
-  .bootVideo {
-    transform: scale(0.74);
-  }
-}
-
-.bootTint {
-  background: radial-gradient(ellipse at 58% 78%, rgb(var(--accent-rgb) / 0.10), transparent 42%);
-  mix-blend-mode: screen;
-  pointer-events: none;
-}
-
-.bootSkip {
-  background: rgb(var(--base-rgb) / 0.28);
-  border: 1px solid rgb(var(--ink-rgb) / 0.12);
-  border-radius: 999px;
-  bottom: 26px;
-  color: rgb(var(--ink-rgb) / 0.76);
-  font-size: 13px;
-  padding: 8px 12px;
-  position: fixed;
-  right: 28px;
-}
-
 .zenSidebar {
-  backdrop-filter: blur(24px) saturate(118%);
   background: linear-gradient(180deg, rgb(var(--base-rgb) / 0.76), rgb(var(--base-deep-rgb) / 0.68));
   border-right: 1px solid rgb(var(--ink-rgb) / 0.10);
   display: flex;
@@ -508,11 +444,6 @@ summary:focus-visible {
   transition: opacity 1s var(--calm-ease), transform 1s var(--calm-ease);
 }
 
-.zenApp.introActive .revealItem {
-  opacity: 0;
-  transform: translateY(18px);
-}
-
 .delayOne { transition-delay: 110ms; }
 .delayTwo { transition-delay: 210ms; }
 .delayThree { transition-delay: 310ms; }
@@ -550,7 +481,7 @@ summary:focus-visible {
   background: rgb(var(--accent-rgb) / 0.085);
   border: 1px solid rgb(var(--accent-rgb) / 0.17);
   border-radius: 8px 8px 2px 8px;
-  box-shadow: 0 12px 46px -24px rgb(var(--accent-rgb) / 0.26);
+  box-shadow: var(--panel-shadow);
   max-width: 85%;
   padding: 17px 20px;
 }
@@ -741,7 +672,7 @@ summary:focus-visible {
 .continueButton {
   background: var(--primary);
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: var(--primary-foreground);
   cursor: pointer;
   flex: 0 0 auto;
@@ -786,7 +717,7 @@ summary:focus-visible {
 .stepCount {
   align-items: center;
   background: rgb(var(--ink-rgb) / 0.06);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   display: inline-flex;
   font-size: 11px;
   height: 20px;
@@ -820,7 +751,6 @@ summary:focus-visible {
 
 .artifactCard,
 .runtimePanel {
-  backdrop-filter: blur(14px);
   background: rgb(var(--base-deep-rgb) / 0.72);
   border: 1px solid rgb(var(--ink-rgb) / 0.10);
   border-radius: 8px;
@@ -964,11 +894,10 @@ pre {
 }
 
 .composerShell {
-  backdrop-filter: blur(22px) saturate(112%);
   background: rgb(var(--base-rgb) / 0.68);
   border: 1px solid rgb(var(--ink-rgb) / 0.14);
   border-radius: 12px;
-  box-shadow: 0 18px 62px -18px rgb(var(--shadow-rgb) / 0.58);
+  box-shadow: var(--panel-shadow);
   display: flex;
   flex-direction: column;
   max-width: 760px;
@@ -1059,7 +988,7 @@ pre {
 
 .quickPrompt:hover {
   border-color: rgb(var(--accent-rgb) / 0.12);
-  box-shadow: 0 8px 22px -16px rgb(var(--accent-rgb) / 0.46);
+  box-shadow: var(--panel-shadow);
   transform: translateY(-2px);
 }
 
@@ -1070,7 +999,7 @@ pre {
 
 .newThreadButton:hover {
   border-color: rgb(var(--accent-rgb) / 0.18);
-  box-shadow: 0 10px 26px -18px rgb(var(--accent-rgb) / 0.50);
+  box-shadow: var(--panel-shadow);
   transform: translateY(-1px);
 }
 
@@ -1123,7 +1052,6 @@ pre {
   0%, 100% { opacity: 0.56; transform: scale(0.82); }
   50% { opacity: 1; transform: scale(1.08); }
 }
-
 
 @keyframes eyeLookLeft {
   0%, 24%, 100% { transform: translateX(0) scaleY(1); }
@@ -1393,7 +1321,7 @@ pre {
 }
 
 .traceNodeState {
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: rgb(var(--ink-rgb) / 0.55);
   flex: 0 0 auto;
   font-size: 10px;
@@ -1421,7 +1349,7 @@ pre {
 .traceAttempt {
   background: rgb(var(--danger-rgb) / 0.12);
   border: 1px solid rgb(var(--danger-rgb) / 0.3);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: var(--soft-coral);
   flex: 0 0 auto;
   font-size: 10px;
@@ -1508,7 +1436,6 @@ pre {
 
 .artifactPanel {
   background: rgb(var(--base-deep-rgb) / 0.86);
-  backdrop-filter: blur(16px);
   border-left: 1px solid rgb(var(--accent-rgb) / 0.16);
   display: flex;
   flex: 0 0 0px;
@@ -1744,7 +1671,7 @@ pre {
   align-items: center;
   background: rgb(var(--ink-rgb) / 0.06);
   border: 1px solid rgb(var(--ink-rgb) / 0.16);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: var(--crisp-white);
   cursor: pointer;
   display: inline-flex;
@@ -1789,8 +1716,8 @@ pre {
   animation: pillIn 240ms cubic-bezier(.22,1,.36,1);
   background: rgb(var(--base-deep-rgb) / 0.85);
   border: 1px solid rgb(var(--accent-rgb) / 0.4);
-  border-radius: 999px;
-  box-shadow: 0 6px 22px rgb(var(--shadow-rgb) / 0.35);
+  border-radius: var(--radius-button);
+  box-shadow: var(--panel-shadow);
   color: var(--sea-green);
   cursor: pointer;
   display: inline-flex;
@@ -1804,14 +1731,14 @@ pre {
 
 .tracePill:hover {
   background: rgb(var(--accent-rgb) / 0.14);
-  box-shadow: 0 8px 26px rgb(var(--shadow-rgb) / 0.45);
+  box-shadow: var(--panel-shadow);
   transform: translateY(-1px);
 }
 
 .tracePillCount {
   align-items: center;
   background: rgb(var(--accent-rgb) / 0.18);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: var(--crisp-white);
   display: inline-flex;
   font-size: 10px;
@@ -1858,7 +1785,6 @@ pre {
   top: 0;
   width: 286px;
   z-index: 24;
-  backdrop-filter: blur(24px) saturate(118%);
 }
 .landingSidebarHead { align-items: center; display: flex; justify-content: space-between; margin-bottom: 20px; padding: 0 6px; }
 .landingSidebarBrand { align-items: center; display: flex; font-size: 18px; gap: 9px; }
@@ -1941,8 +1867,8 @@ pre {
   align-items: center;
   background: var(--sea-green);
   border: 0;
-  border-radius: 999px;
-  box-shadow: 0 10px 34px -12px rgb(var(--accent-rgb) / 0.55);
+  border-radius: var(--radius-button);
+  box-shadow: var(--panel-shadow);
   color: var(--navy-black);
   cursor: pointer;
   display: inline-flex;
@@ -1954,7 +1880,7 @@ pre {
 }
 
 .landingStart:hover {
-  box-shadow: 0 14px 44px -12px rgb(var(--accent-rgb) / 0.7);
+  box-shadow: var(--panel-shadow);
   transform: translateY(-2px);
 }
 
@@ -1988,7 +1914,7 @@ pre {
 .landingMode:hover {
   background: rgb(var(--accent-rgb) / 0.07);
   border-color: rgb(var(--accent-rgb) / 0.28);
-  box-shadow: 0 8px 26px -14px rgb(var(--accent-rgb) / 0.5);
+  box-shadow: var(--panel-shadow);
   transform: translateY(-2px);
 }
 
@@ -2050,7 +1976,7 @@ pre {
 .composerSegment {
   background: rgb(var(--base-deep-rgb) / 0.30);
   border: 1px solid rgb(var(--ink-rgb) / 0.08);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   display: inline-flex;
   gap: 2px;
   padding: 3px;
@@ -2060,7 +1986,7 @@ pre {
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: var(--secondary);
   cursor: pointer;
   display: inline-flex;
@@ -2103,7 +2029,7 @@ pre {
   align-items: center;
   background: rgb(var(--accent-rgb) / 0.09);
   border: 1px solid rgb(var(--accent-rgb) / 0.26);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: var(--sea-green);
   display: inline-flex;
   font-size: 12px;
@@ -2141,7 +2067,7 @@ pre {
 .modelMenu { position: relative; }
 .modelTrigger { align-items: center; background: rgb(var(--ink-rgb) / .045); border: 1px solid rgb(var(--ink-rgb) / .10); border-radius: 10px; color: var(--secondary); display: inline-flex; gap: 6px; height: 30px; padding: 0 9px; transition: transform 180ms cubic-bezier(.22,1,.36,1), border-color 180ms ease, color 180ms ease; }
 .modelTrigger:hover, .modelTrigger[aria-expanded="true"] { border-color: rgb(var(--accent-rgb) / .42); color: var(--crisp-white); transform: translateY(-1px); }
-.modelPopover { background: rgb(var(--base-rgb) / .97); border: 1px solid rgb(var(--ink-rgb) / .14); border-radius: 14px; bottom: calc(100% + 10px); box-shadow: 0 18px 44px rgb(var(--shadow-rgb) / .38); min-width: 238px; opacity: 0; padding: 6px; pointer-events: none; position: absolute; right: 0; transform: translateY(6px) scale(.97); transition: opacity 160ms ease, transform 200ms cubic-bezier(.22,1,.36,1), visibility 200ms step-end; visibility: hidden; z-index: 20; }
+.modelPopover { background: rgb(var(--base-rgb) / .97); border: 1px solid rgb(var(--ink-rgb) / .14); border-radius: 14px; bottom: calc(100% + 10px); box-shadow: var(--panel-shadow); min-width: 238px; opacity: 0; padding: 6px; pointer-events: none; position: absolute; right: 0; transform: translateY(6px) scale(.97); transition: opacity 160ms ease, transform 200ms cubic-bezier(.22,1,.36,1), visibility 200ms step-end; visibility: hidden; z-index: 20; }
 .modelPopover.open { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); transition: opacity 140ms ease, transform 200ms cubic-bezier(.34,1.3,.5,1); visibility: visible; }
 .modelOption { align-items: center; background: transparent; border: 0; border-radius: 10px; color: var(--crisp-white); display: flex; gap: 14px; justify-content: space-between; padding: 10px; text-align: left; width: 100%; }
 .modelOption:hover:not(:disabled), .modelOption.active { background: rgb(var(--accent-rgb) / .10); }
@@ -2168,7 +2094,6 @@ pre {
 
 .workspaceTopBar {
   align-items: center;
-  backdrop-filter: blur(var(--glass-blur)) saturate(115%);
   background: rgb(var(--base-rgb) / 0.62);
   border-bottom: 1px solid var(--glass-rim);
   display: flex;
@@ -2223,7 +2148,7 @@ pre {
   align-items: center;
   background: var(--surface-variant);
   border: 1px solid var(--outline-variant);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: var(--secondary);
   display: inline-flex;
   font-size: 12.5px;
@@ -2251,7 +2176,7 @@ pre {
   align-items: center;
   background: var(--surface-variant);
   border: 1px solid var(--outline-variant);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: var(--secondary);
   display: inline-flex;
   font-size: 12px;
@@ -2429,7 +2354,7 @@ pre {
   align-items: center;
   background: var(--surface-variant);
   border: 1px solid var(--outline-variant);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: var(--secondary);
   display: inline-flex;
   font-size: 12px;
@@ -2464,28 +2389,6 @@ pre {
   border-right: 1px solid rgb(var(--ink-rgb) / 0.08);
 }
 
-/* LIGHT: shallow water, seen from above.
- *
- * Two failed attempts are worth recording. At 86% opaque white the veil erased
- * the shader entirely and the theme rendered as flat paper. Dropping it to 10%
- * at the bottom went the other way — an emerald radial bloom sat across the top
- * of the workspace as a hard green band, which is the opposite of calm.
- *
- * What works is a VERTICAL gradient and no radial bloom at all: bright at the
- * surface, cooling into faint aqua with depth. Colour arrives gradually and
- * never forms an edge, so there is nothing for the eye to catch on, and text
- * density is highest exactly where the wash is lightest. */
-[data-theme="light"] .ambientVeil {
-  background: linear-gradient(
-    177deg,
-    rgb(255 255 255 / 0.88) 0%,
-    rgb(252 254 254 / 0.72) 22%,
-    rgb(240 250 250 / 0.52) 48%,
-    rgb(228 245 245 / 0.42) 72%,
-    rgb(216 238 240 / 0.44) 100%
-  );
-}
-
 /* The shader itself is theme-aware now, so the canvas renders at full opacity
    in both themes. Dimming a dark shader was what produced the grey wash. */
 
@@ -2502,10 +2405,6 @@ pre {
 
 [data-theme="light"] .workspaceTopBar {
   background: rgb(255 255 255 / 0.78);
-}
-
-[data-theme="light"] .bootIntro {
-  background: #f7f9f8;
 }
 
 /* Responsive: below the sidebar breakpoint the top bar carries the brand, so
@@ -2793,7 +2692,7 @@ pre {
 
 .taskCallCount {
   background: var(--surface-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: var(--secondary);
   flex: 0 0 auto;
   font-family: "JetBrains Mono", ui-monospace, monospace;
@@ -2861,7 +2760,7 @@ pre {
 
 .toolAttempt {
   background: rgb(var(--danger-rgb) / 0.16);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: var(--soft-coral);
   flex: 0 0 auto;
   font-size: 10px;
@@ -2919,7 +2818,6 @@ pre {
  * ------------------------------------------------------------------------- */
 
 .composerPrompt {
-  backdrop-filter: blur(var(--glass-blur));
   background: rgb(var(--base-rgb) / 0.86);
   border: 1px solid rgb(var(--accent-rgb) / 0.34);
   border-radius: 16px;
@@ -3016,7 +2914,7 @@ pre {
 .composerQuestionChoice {
   background: rgb(var(--ink-rgb) / .045);
   border: 1px solid rgb(var(--ink-rgb) / .12);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: rgb(var(--ink-rgb) / .76);
   cursor: pointer;
   font: inherit;
@@ -3246,7 +3144,7 @@ pre {
 .landingSuggestion {
   background: rgb(var(--ink-rgb) / 0.05);
   border: 1px solid rgb(var(--ink-rgb) / 0.09);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: rgb(var(--ink-rgb) / 0.7);
   cursor: pointer;
   font-size: 13.5px;
@@ -3275,11 +3173,9 @@ pre {
    holding it together. */
 [data-theme="light"] .landingCard {
   background: rgb(255 255 255 / 0.62);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
   border: 1px solid rgb(var(--ink-rgb) / 0.09);
   border-radius: 36px;
-  box-shadow: 0 30px 90px -40px rgb(var(--shadow-rgb) / 0.28);
+  box-shadow: var(--panel-shadow);
   max-width: 880px;
   padding: 58px 76px 48px;
 }
@@ -3307,8 +3203,6 @@ pre {
 .gateScrim {
   align-items: center;
   animation: gateFade 200ms var(--calm-ease);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   background: rgb(var(--base-rgb) / 0.62);
   display: flex;
   inset: 0;
@@ -3472,7 +3366,7 @@ pre {
 }
 
 .gateButton.primary:hover:not(:disabled) {
-  box-shadow: 0 10px 28px -12px rgb(var(--accent-rgb) / 0.65);
+  box-shadow: var(--panel-shadow);
 }
 
 .gateButton.primary:disabled {
@@ -3533,7 +3427,7 @@ pre {
 
 .gateOptionTag {
   background: rgb(var(--accent-rgb) / 0.16);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: var(--sea-green);
   font-size: 10.5px;
   font-style: normal;
@@ -3695,7 +3589,6 @@ pre {
   color: var(--danger-strong);
 }
 
-
 /* ===========================================================================
  * QUEUED MESSAGES
  * ========================================================================= */
@@ -3722,7 +3615,7 @@ pre {
   align-items: center;
   background: rgb(var(--ink-rgb) / 0.06);
   border: 1px dashed rgb(var(--ink-rgb) / 0.18);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   display: inline-flex;
   gap: 6px;
   max-width: 260px;
@@ -3772,8 +3665,6 @@ pre {
 
 [data-theme="light"] .workspaceTopBar {
   background: rgb(255 255 255 / 0.62);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid rgb(var(--ink-rgb) / 0.06);
 }
 
@@ -3784,7 +3675,7 @@ pre {
 [data-theme="light"] .userBubble {
   background: rgb(255 255 255 / 0.9);
   border: 1px solid rgb(var(--ink-rgb) / 0.08);
-  box-shadow: 0 2px 14px -6px rgb(var(--shadow-rgb) / 0.16);
+  box-shadow: var(--panel-shadow);
 }
 
 [data-theme="light"] .gateScrim {
@@ -3804,7 +3695,6 @@ pre {
   opacity: 0.22;
 }
 
-
 /* ===========================================================================
  * WORK PANEL — code while it is written, preview when it runs
  *
@@ -3815,8 +3705,6 @@ pre {
 .workPanel {
   animation: workPanelIn 340ms var(--calm-ease);
   background: rgb(var(--base-rgb) / 0.94);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
   border-left: 1px solid var(--glass-rim);
   display: flex;
   flex: 0 0 clamp(380px, 44%, 720px);
@@ -4007,7 +3895,6 @@ pre {
   }
 }
 
-
 /* ===========================================================================
  * COMPOSER ALIGNMENT WITH THE WORK PANEL
  *
@@ -4060,7 +3947,6 @@ pre {
   background: rgb(255 255 255 / 0.8);
 }
 
-
 /* ===========================================================================
  * COMPOSER GATE — the question, inside the composer
  *
@@ -4074,11 +3960,9 @@ pre {
 .composerGate {
   animation: gateFade 220ms var(--calm-ease);
   background: rgb(var(--base-rgb) / 0.9);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgb(var(--accent-rgb) / 0.28);
   border-radius: 16px;
-  box-shadow: 0 16px 46px -20px rgb(var(--shadow-rgb) / 0.4);
+  box-shadow: var(--panel-shadow);
   margin: 0 auto 10px;
   max-width: 760px;
   padding: 16px 18px 14px;
@@ -4234,7 +4118,7 @@ pre {
 
 .composerGateTag {
   background: rgb(var(--accent-rgb) / 0.16);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: var(--sea-green);
   font-size: 10px;
   font-style: normal;
@@ -4297,39 +4181,9 @@ pre {
 .topBarTitle { align-items: center; color: rgb(var(--ink-rgb) / .72); display: flex; font-size: 14px; font-weight: 600; gap: 8px; }
 .topBarTitle svg { color: rgb(var(--ink-rgb) / .4); }
 
-/* The intro is a short mark reveal, not a stretched splash screen. */
-.bootIntro {
-  align-items: center;
-  background:
-    radial-gradient(ellipse at 50% 48%, rgb(var(--accent-rgb) / .11), transparent 42%),
-    var(--navy-black);
-  display: flex;
-  justify-content: center;
-  overflow: hidden;
-}
-.bootIntro::before {
-  background: radial-gradient(circle, rgb(var(--accent-rgb) / .18), transparent 60%);
-  content: ""; height: 86vmin; left: 50%; position: absolute; top: 50%; transform: translate(-50%, -50%); width: 86vmin;
-}
-.bootVideo {
-  filter: saturate(.82) contrast(1.04) brightness(.92) drop-shadow(0 0 42px rgb(var(--accent-rgb) / .22));
-  height: min(720px, 72vh); inset: auto; mix-blend-mode: screen;
-  object-fit: contain; opacity: .95; position: relative; transform: none; width: min(720px, 72vw); z-index: 1;
-}
-.bootTint {
-  background:
-    radial-gradient(ellipse at center, transparent 26%, rgb(var(--base-rgb) / .18) 70%, rgb(var(--base-rgb) / .72) 100%),
-    linear-gradient(180deg, transparent 48%, rgb(var(--base-rgb) / .48) 100%);
-  mix-blend-mode: normal;
-  opacity: .48;
-  z-index: 2;
-}
-.bootSkip { backdrop-filter: blur(12px); background: rgb(255 255 255 / .06); border-color: rgb(255 255 255 / .16); color: rgb(255 255 255 / .72); right: 30px; z-index: 4; }
-
 @media (max-width: 720px) {
   .zenSidebar { width: 238px; }
   .zenWorkspace { margin-left: 238px; }
-  .bootVideo { height: 62vh; width: 88vw; }
 }
 
 /* Manus-like result workspace: the preview is a first-class canvas with its
@@ -4377,24 +4231,10 @@ pre {
   .workPanel { flex-basis: 100%; }
 }
 
-/* ===========================================================================
- * NOMIN SURFACE SYSTEM
- * White remains the product. Indigo and teal are light, focus, and state —
- * never broad gradient-filled boxes. The shader lives behind the work instead
- * of inside every component, so the interface keeps a calm, editorial feel.
- * ========================================================================= */
-
-.ambientVeil {
-  background:
-    radial-gradient(ellipse at 18% 18%, rgb(92 68 191 / .055), transparent 30%),
-    radial-gradient(ellipse at 76% 72%, rgb(var(--accent-rgb) / .045), transparent 34%);
-}
-
 .landingPage { padding: 56px 24px 48px; }
 .landingCard { max-width: 720px; }
 [data-theme="light"] .landingCard {
   background: transparent;
-  backdrop-filter: none;
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -4406,7 +4246,7 @@ pre {
   background: rgb(255 255 255 / .55);
   border: 1px solid rgb(var(--ink-rgb) / .12);
   border-radius: 50%;
-  box-shadow: 0 14px 44px -26px rgb(58 37 124 / .30), inset 0 0 0 8px rgb(255 255 255 / .40);
+  box-shadow: var(--panel-shadow);
   color: #4b31a4;
   height: 164px;
   margin-bottom: 26px;
@@ -4435,7 +4275,7 @@ pre {
 [data-theme="light"] .composerShell {
   background: rgb(255 255 255 / .80);
   border-color: rgb(var(--ink-rgb) / .15);
-  box-shadow: 0 12px 34px -22px rgb(var(--shadow-rgb) / .34), 0 0 0 1px rgb(255 255 255 / .58) inset;
+  box-shadow: var(--panel-shadow);
 }
 .composerShell:focus-within {
   border-color: rgb(71 47 165 / .54);
@@ -4445,8 +4285,8 @@ pre {
 .composerShell.landing textarea { min-height: 92px; }
 .leftComposerTools button { color: rgb(var(--ink-rgb) / .45); height: 30px; width: 30px; }
 .leftComposerTools button:hover { background: rgb(71 47 165 / .07); color: #4930a4; }
-.sendOrb { background: #432a9d; box-shadow: 0 8px 18px -10px rgb(57 31 144 / .72); margin-left: 10px; }
-.sendOrb:hover:not(:disabled) { background: #342079; box-shadow: 0 12px 24px -11px rgb(57 31 144 / .74); }
+.sendOrb { background: #432a9d; box-shadow: var(--panel-shadow); margin-left: 10px; }
+.sendOrb:hover:not(:disabled) { background: #342079; box-shadow: var(--panel-shadow); }
 .composerModelTag { color: rgb(var(--ink-rgb) / .40); font-size: 12px; }
 .modelTrigger { border-color: rgb(var(--ink-rgb) / .12); color: rgb(var(--ink-rgb) / .66); }
 .modelTrigger:hover, .modelTrigger[aria-expanded="true"] { border-color: rgb(71 47 165 / .40); color: #432a9d; }
@@ -4460,43 +4300,11 @@ pre {
 .primaryNavItem:hover, .primaryNavItem.active { background: rgb(71 47 165 / .055); border-color: rgb(71 47 165 / .10); color: var(--crisp-white); }
 .historyEmpty { color: rgb(var(--ink-rgb) / .45); }
 
-.tracePill { background: rgb(255 255 255 / .86); border-color: rgb(71 47 165 / .26); color: #432a9d; box-shadow: 0 10px 28px -20px rgb(57 31 144 / .48); }
+.tracePill { background: rgb(255 255 255 / .86); border-color: rgb(71 47 165 / .26); color: #432a9d; box-shadow: var(--panel-shadow); }
 .tracePill:hover { background: rgb(71 47 165 / .055); }
 .tracePillCount { background: rgb(71 47 165 / .11); color: #432a9d; }
 .artifactPreviewFrame, .previewFrame, .runtimePanel .previewFrame { background: var(--surface-inset); }
 [data-theme="light"] .workPanel { background: rgb(255 255 255 / .82); border-left-color: rgb(var(--ink-rgb) / .12); }
-
-/* The intro draws from the logo itself: white field, controlled indigo/teal
-   light, and a single living mark. No video frame or mismatched rectangle. */
-.bootIntro { align-items: center; background: var(--navy-black); display: flex; justify-content: center; isolation: isolate; }
-.bootIntro::before { display: none; }
-.bootShader { background: linear-gradient(116deg, rgb(75 41 159 / .07), transparent 36%, rgb(var(--accent-rgb) / .06) 70%, transparent), radial-gradient(ellipse 48% 24% at 50% 48%, rgb(102 69 191 / .10), transparent 74%); inset: 0; position: absolute; }
-.bootCurrent { background: linear-gradient(90deg, transparent, rgb(84 51 177 / .16), rgb(var(--accent-rgb) / .14), transparent); height: 1px; left: 50%; opacity: .62; pointer-events: none; position: absolute; top: 50%; transform: translateX(-50%); width: min(66vw, 720px); }
-.bootCurrentOne { animation: bootCurrent 5.8s var(--calm-ease) infinite; margin-top: -72px; }
-.bootCurrentTwo { animation: bootCurrent 7.4s var(--calm-ease) infinite reverse; margin-top: 94px; opacity: .38; width: min(46vw, 520px); }
-.bootBrand { align-items: center; animation: bootBrandIn 540ms var(--calm-ease); display: flex; flex-direction: column; position: relative; z-index: 2; }
-.bootMark { align-items: center; background: rgb(255 255 255 / .48); border: 1px solid rgb(71 47 165 / .18); border-radius: 50%; box-shadow: 0 22px 64px -34px rgb(57 31 144 / .56); color: #4930a4; display: flex; height: 174px; justify-content: center; width: 174px; }
-.bootWordmark { color: #21135a; font-family: var(--font-display); font-size: 34px; font-weight: 700; letter-spacing: -.05em; line-height: 1; margin: 24px 0 7px; }
-.bootTagline { color: rgb(var(--ink-rgb) / .50); font-size: 12px; letter-spacing: .18em; margin: 0; text-transform: uppercase; }
-.bootSkip { background: rgb(255 255 255 / .72); border-color: rgb(71 47 165 / .18); color: #432a9d; }
-[data-theme="dark"] .bootMark { background: rgb(255 255 255 / .04); border-color: rgb(var(--accent-rgb) / .28); color: #6f58d5; }
-[data-theme="dark"] .bootWordmark { color: var(--crisp-white); }
-[data-theme="dark"] .bootSkip { background: rgb(255 255 255 / .07); border-color: rgb(255 255 255 / .15); color: var(--crisp-white); }
-
-/* ==========================================================================
-   PRODUCT-SCALE RESPONSIVE FINISH
-   The conversation remains calm; the preview is a real canvas, not a small
-   card inside one. Device controls change only the frame, never the running
-   workspace or server. These rules deliberately sit last to unify older
-   responsive fragments above.
-   ========================================================================== */
-.nominWordmark,
-.studioBrand h1,
-.bootWordmark {
-  font-family: Papyrus, "Papyrus LET", fantasy;
-  font-weight: 700;
-  letter-spacing: -.055em;
-}
 
 .brandGlyph {
   height: 58px;
@@ -4558,7 +4366,7 @@ pre {
 .runtimePanel .previewCanvas .previewFrame {
   background: var(--surface-inset);
   border: 1px solid rgb(var(--ink-rgb) / .12);
-  box-shadow: 0 18px 42px -30px rgb(var(--shadow-rgb) / .52);
+  box-shadow: var(--panel-shadow);
   flex: 0 1 100%;
   height: 100%;
   min-height: 420px;
@@ -4579,7 +4387,7 @@ pre {
   border: 1px solid var(--glass-rim);
   border-radius: 18px;
   background: var(--surface);
-  box-shadow: 0 24px 80px rgb(var(--shadow-rgb) / .28);
+  box-shadow: var(--panel-shadow);
 }
 
 .previewFullscreenBar {
@@ -4600,7 +4408,7 @@ pre {
   height: 30px;
   place-items: center;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   background: transparent;
   color: var(--secondary);
   cursor: pointer;
@@ -4642,7 +4450,7 @@ pre {
 
 [data-theme="dark"] .previewCanvas .previewFrame {
   border-color: rgb(255 255 255 / .12);
-  box-shadow: 0 18px 42px -30px rgb(0 0 0 / .92);
+  box-shadow: var(--panel-shadow);
 }
 
 @media (min-width: 1800px) {
@@ -4688,39 +4496,31 @@ pre {
 [data-theme="dark"] .landingGlyph {
   background: rgb(102 76 204 / .14);
   border-color: rgb(var(--accent-rgb) / .24);
-  box-shadow: 0 16px 48px -28px rgb(0 0 0 / .72), inset 0 0 0 8px rgb(255 255 255 / .025);
+  box-shadow: var(--panel-shadow);
   color: #63d8c8;
 }
 [data-theme="dark"] .composerShell {
   background: rgb(27 18 61 / .84);
   border-color: rgb(255 255 255 / .14);
-  box-shadow: 0 14px 38px -22px rgb(0 0 0 / .70), 0 0 0 1px rgb(255 255 255 / .025) inset;
+  box-shadow: var(--panel-shadow);
 }
 [data-theme="dark"] .composerShell textarea { color: var(--crisp-white); }
 [data-theme="dark"] .composerShell textarea::placeholder { color: rgb(var(--ink-rgb) / .42); }
 [data-theme="dark"] .composerModelTag { color: rgb(var(--ink-rgb) / .48); }
 [data-theme="dark"] .modelTrigger { border-color: rgb(255 255 255 / .14); color: rgb(var(--ink-rgb) / .72); }
-@keyframes bootCurrent { 0%, 100% { opacity: .16; transform: translateX(-50%) scaleX(.72); } 50% { opacity: .72; transform: translateX(-50%) scaleX(1); } }
-@keyframes bootBrandIn { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .bootCurrent, .bootBrand { animation: none; } }
 
 /* Direction reset: the mascot is a mark, not an icon trapped in a bubble.
    The layout borrows the restraint of the best chat products: one clear prompt
    surface, no decorative cards, and colour reserved for light/state. */
 .landingGlyph { background: transparent; border: 0; border-radius: 0; box-shadow: none; color: #4b31a4; height: 118px; margin-bottom: 20px; width: 118px; }
-.landingGlyph::before { background: linear-gradient(90deg, transparent, rgb(87 61 190 / .25), rgb(25 169 159 / .24), transparent); border-radius: 999px; bottom: 4px; height: 1px; inset: auto auto 4px -24px; width: calc(100% + 48px); }
+.landingGlyph::before { background: linear-gradient(90deg, transparent, rgb(87 61 190 / .25), rgb(25 169 159 / .24), transparent); border-radius: var(--radius-button); bottom: 4px; height: 1px; inset: auto auto 4px -24px; width: calc(100% + 48px); }
 .landingGlyph svg { filter: drop-shadow(0 12px 13px rgb(71 47 165 / .14)); height: 112px; width: 112px; }
 .landingCard h1 { font-size: clamp(34px, 5vw, 52px); font-weight: 680; letter-spacing: -.045em; line-height: 1.06; margin: 0 0 14px; }
-.bootMark { background: transparent; border: 0; border-radius: 0; box-shadow: none; color: #4930a4; height: 112px; position: relative; width: 112px; }
-.bootMark::before { background: linear-gradient(90deg, transparent, rgb(71 47 165 / .38), rgb(var(--accent-rgb) / .35), transparent); bottom: 1px; content: ""; height: 1px; left: -56px; position: absolute; width: 260px; }
-.bootMark svg { filter: drop-shadow(0 18px 20px rgb(71 47 165 / .18)); }
 [data-theme="dark"] .landingCard h1 { color: var(--crisp-white); }
 [data-theme="dark"] .landingSub { color: rgb(var(--ink-rgb) / .64); }
 [data-theme="dark"] .landingGlyph { background: transparent; border: 0; box-shadow: none; color: #58d0c0; }
 [data-theme="dark"] .landingGlyph::before { background: linear-gradient(90deg, transparent, rgb(167 139 250 / .30), rgb(58 197 181 / .28), transparent); }
 [data-theme="dark"] .landingGlyph svg { filter: drop-shadow(0 12px 22px rgb(58 197 181 / .20)); }
-[data-theme="dark"] .bootMark { background: transparent; border: 0; color: #58d0c0; }
-[data-theme="dark"] .bootMark::before { background: linear-gradient(90deg, transparent, rgb(167 139 250 / .42), rgb(58 197 181 / .38), transparent); }
 
 /* Calm progress first; the exact tool ledger remains one click away. */
 .taskProgress {
@@ -4910,7 +4710,7 @@ pre {
   align-items: center;
   background: var(--surface-variant);
   border: 1px solid var(--outline-variant);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: var(--secondary);
   display: inline-flex;
   font-size: 11.5px;
@@ -4979,7 +4779,7 @@ pre {
   background: color-mix(in srgb, var(--surface-variant) 92%, transparent);
   border-color: rgb(var(--ink-rgb) / .11);
   border-radius: 16px;
-  box-shadow: 0 18px 34px -31px rgb(var(--shadow-rgb) / .42);
+  box-shadow: var(--panel-shadow);
 }
 
 .taskTreeHead {
@@ -4996,7 +4796,7 @@ pre {
 .taskTreeCount {
   background: rgb(var(--ink-rgb) / .055);
   border: 1px solid rgb(var(--ink-rgb) / .08);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: rgb(var(--ink-rgb) / .56);
   font-size: 10px;
   padding: 3px 8px;
@@ -5081,7 +4881,7 @@ pre {
 .taskDetailsButton {
   align-items: center;
   border: 1px solid rgb(var(--ink-rgb) / .1);
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   color: rgb(var(--ink-rgb) / .58);
   display: inline-flex;
   gap: 3px;
@@ -5133,7 +4933,7 @@ pre {
 }
 .taskNext > span { color: rgb(var(--ink-rgb) / .42); flex: 0 0 auto; font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
 .taskNext > div { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
-.taskNext > div span { border: 1px solid rgb(var(--ink-rgb) / .09); border-radius: 999px; color: rgb(var(--ink-rgb) / .57); font-size: 10.5px; max-width: 225px; overflow: hidden; padding: 3px 7px; text-overflow: ellipsis; white-space: nowrap; }
+.taskNext > div span { border: 1px solid rgb(var(--ink-rgb) / .09); border-radius: var(--radius-button); color: rgb(var(--ink-rgb) / .57); font-size: 10.5px; max-width: 225px; overflow: hidden; padding: 3px 7px; text-overflow: ellipsis; white-space: nowrap; }
 
 .taskList { border-top: 1px solid rgb(var(--ink-rgb) / .08); padding: 8px 10px 10px; }
 .taskItem { transition: background 180ms var(--calm-ease), transform 180ms var(--calm-ease); }
@@ -5168,7 +4968,7 @@ pre {
 .connectionMode { align-items: center; background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 14px; display: grid; gap: 4px; grid-template-columns: 1fr auto; margin-bottom: 18px; padding: 18px 20px; }
 .connectionMode > span { color: var(--muted-ink); font-size: 11px; grid-column: 1; text-transform: uppercase; }
 .connectionMode > strong { font-size: 14px; grid-column: 1; }
-.connectionMode > button { align-items: center; background: transparent; border: 1px solid var(--outline-variant); border-radius: 999px; color: var(--muted-ink); cursor: pointer; display: inline-flex; gap: 7px; grid-column: 2; grid-row: 1 / 3; padding: 8px 11px; }
+.connectionMode > button { align-items: center; background: transparent; border: 1px solid var(--outline-variant); border-radius: var(--radius-button); color: var(--muted-ink); cursor: pointer; display: inline-flex; gap: 7px; grid-column: 2; grid-row: 1 / 3; padding: 8px 11px; }
 .connectionForm { display: grid; gap: 14px; }
 .connectionForm fieldset { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 16px; display: grid; gap: 18px; margin: 0; padding: clamp(20px, 4vw, 32px); }
 .connectionForm legend { color: var(--crisp-white); font-size: 16px; font-weight: 700; padding: 0 8px; }
@@ -5184,7 +4984,7 @@ pre {
 .connectionForm input { background: var(--canvas); border: 1px solid var(--outline-variant); border-radius: 10px; color: var(--crisp-white); font: inherit; min-height: 44px; outline: 0; padding: 0 13px; width: 100%; }
 .connectionForm input:focus { border-color: rgb(var(--accent-rgb) / .62); box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .09); }
 .connectionInput { align-items: center; display: flex; position: relative; }.connectionInput svg { color: var(--muted-ink); left: 13px; position: absolute; }.connectionInput input { padding-left: 39px; }
-.testConnection, .activateConnection { border: 0; border-radius: 999px; cursor: pointer; font-weight: 700; min-height: 43px; padding: 0 18px; width: fit-content; }
+.testConnection, .activateConnection { border: 0; border-radius: var(--radius-button); cursor: pointer; font-weight: 700; min-height: 43px; padding: 0 18px; width: fit-content; }
 .testConnection { background: var(--crisp-white); color: var(--canvas); }.testConnection:disabled { cursor: not-allowed; opacity: .45; }
 .activateConnection { background: linear-gradient(110deg, var(--jelly-violet), var(--jelly-aqua)); color: white; }
 .connectionStatus { border-left: 2px solid var(--outline-variant); color: var(--muted-ink); font-size: 13px; line-height: 1.5; margin: 0; padding-left: 12px; }.connectionStatus.success { border-color: var(--sea-green); color: var(--sea-green); }.connectionStatus.error { border-color: var(--soft-coral); color: var(--soft-coral); }
@@ -5206,7 +5006,7 @@ pre {
 .modelConnectionLink { border-top: 1px solid var(--outline-variant); color: var(--muted-ink); display: block; font-size: 11px; margin-top: 5px; padding: 10px 12px; }.modelConnectionLink:hover { color: var(--crisp-white); }
 .primaryNavItem[href] { text-decoration: none; }
 .landingPrimaryNav { margin: 8px 0 18px; }
-.connectionChip { align-items: center; background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 999px; color: var(--secondary); display: inline-flex; font-size: 12px; gap: 7px; min-height: 34px; max-width: 190px; padding: 0 11px; text-decoration: none; }
+.connectionChip { align-items: center; background: var(--surface); border: 1px solid var(--outline-variant); border-radius: var(--radius-button); color: var(--secondary); display: inline-flex; font-size: 12px; gap: 7px; min-height: 34px; max-width: 190px; padding: 0 11px; text-decoration: none; }
 .connectionChip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.connectionChip svg { color: var(--sea-green); flex: 0 0 auto; }.connectionChip:hover { border-color: rgb(var(--accent-rgb) / .42); color: var(--crisp-white); }.connectionChip.compact { max-width: 160px; }
 @media (max-width: 760px) { .topBarActions .connectionChip { display: none; } }
 @media (min-width: 1800px) { .zenApp { --work-panel-width: min(58vw, 1120px); } }
@@ -5255,4 +5055,165 @@ pre {
 .phaseError { align-items: center; background: rgb(var(--danger-rgb) / .1); border: 1px solid rgb(var(--danger-rgb) / .3); border-radius: 50%; color: var(--soft-coral); display: inline-flex; height: 24px; justify-content: center; width: 24px; }
 .agentPhase.error ~ * .capacityChip, body:has(.agentPhase.error) .capacityChip, body:has(.pausedNote) .capacityChip { animation: none !important; transition: none !important; }
 .allowanceModal { align-items: center; background: rgb(var(--shadow-rgb) / .42); display: flex; inset: 0; justify-content: center; padding: 20px; position: fixed; z-index: 200; backdrop-filter: blur(14px); }
-.allowanceCard { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 20px; box-shadow: var(--panel-shadow); color: var(--crisp-white); display: grid; gap: 14px; max-width: 520px; padding: clamp(26px, 5vw, 42px); width: 100%; }.allowanceCard > p { color: var(--sea-green); font-size: 11px; font-weight: 750; letter-spacing: .09em; margin: 0; text-transform: uppercase; }.allowanceCard h2 { font-family: var(--font-display); font-size: clamp(30px, 5vw, 44px); font-weight: 500; letter-spacing: -.035em; line-height: 1.05; margin: 0; }.allowanceCard > span { color: var(--muted-ink); font-size: 14px; line-height: 1.6; }.allowanceCard > div { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 7px; }.allowanceCard a, .allowanceCard button { border: 1px solid var(--outline-variant); border-radius: 999px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 680; padding: 10px 15px; text-decoration: none; }.allowanceCard a { background: var(--crisp-white); color: var(--canvas); }.allowanceCard button { background: transparent; color: var(--muted-ink); }
+.allowanceCard { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 20px; box-shadow: var(--panel-shadow); color: var(--crisp-white); display: grid; gap: 14px; max-width: 520px; padding: clamp(26px, 5vw, 42px); width: 100%; }.allowanceCard > p { color: var(--sea-green); font-size: 11px; font-weight: 750; letter-spacing: .09em; margin: 0; text-transform: uppercase; }.allowanceCard h2 { font-family: var(--font-display); font-size: clamp(30px, 5vw, 44px); font-weight: 500; letter-spacing: -.035em; line-height: 1.05; margin: 0; }.allowanceCard > span { color: var(--muted-ink); font-size: 14px; line-height: 1.6; }.allowanceCard > div { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 7px; }.allowanceCard a, .allowanceCard button { border: 1px solid var(--outline-variant); border-radius: var(--radius-button); cursor: pointer; font: inherit; font-size: 13px; font-weight: 680; padding: 10px 15px; text-decoration: none; }.allowanceCard a { background: var(--crisp-white); color: var(--canvas); }.allowanceCard button { background: transparent; color: var(--muted-ink); }
+
+/* ===========================================================================
+ * KRAKEN DESIGN SYSTEM — CONFORMANCE LAYER
+ *
+ * The tokens at the top of this file carry the palette. This block pins the
+ * handful of values the system states explicitly (type scale, button anatomy,
+ * badge colours, elevation) and neutralises the decorative leftovers of the
+ * previous theme — tinted page washes, gradient chrome, and glow shadows.
+ *
+ * It lives at the end of the file on purpose: it overrides by source order, so
+ * retheming did not require rewriting five thousand lines of layout that are
+ * still perfectly good. Layout is untouched here — colour, type and radius only.
+ * ========================================================================= */
+
+/* --- Surfaces: white, not tinted ---------------------------------------- */
+[data-theme="light"] body,
+[data-theme="light"] .zenApp {
+  background: #ffffff;
+}
+
+[data-theme="light"] .zenSidebar {
+  background: #fafafc;
+  border-right: 1px solid var(--kraken-border);
+}
+
+[data-theme="dark"] body,
+[data-theme="dark"] .zenApp {
+  background: #101114;
+}
+
+[data-theme="dark"] .zenSidebar {
+  background: #18191e;
+  border-right: 1px solid var(--kraken-border);
+}
+
+/* --- Type scale ---------------------------------------------------------- */
+.landingCard h1 {
+  font-family: var(--font-display);
+  font-size: 48px;
+  font-weight: 700;
+  line-height: 1.17;
+  letter-spacing: -1px;
+}
+
+.capacityHero h1,
+.connectionsIntro h1 {
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 1.22;
+  letter-spacing: -0.5px;
+}
+
+.allowanceCard h2,
+.heroMessage h2 {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.29;
+  letter-spacing: -0.5px;
+}
+
+.panelTitle {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: normal;
+}
+
+/* --- Buttons: 12px is the maximum radius, never pill --------------------- */
+button,
+.historyItem,
+.suggestionChip {
+  border-radius: var(--radius-button);
+}
+
+/* Primary purple CTA.
+   The send control stays a 50% circle: that value is in the system's own radius
+   scale and is the established pattern for a single-icon action. The 12px cap
+   applies to text buttons, which is what "no pill buttons" is about. */
+.sendOrb,
+.primaryAction {
+  background: var(--kraken-purple);
+  border: 0;
+  box-shadow: none;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.sendOrb:hover:not(:disabled),
+.primaryAction:hover:not(:disabled) {
+  background: var(--kraken-purple-dark);
+}
+
+.sendOrb:disabled {
+  background: rgba(148, 151, 169, 0.24);
+  color: #ffffff;
+}
+
+/* Secondary grey */
+.landingSuggestion {
+  background: rgba(148, 151, 169, 0.08);
+  border: 1px solid var(--kraken-border);
+  border-radius: var(--radius-button);
+  box-shadow: none;
+  color: var(--crisp-white);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.landingSuggestion:hover {
+  background: var(--kraken-purple-subtle);
+  border-color: var(--kraken-purple);
+  color: var(--kraken-purple);
+}
+
+/* --- Badges -------------------------------------------------------------- */
+.runtimePanel.complete .previewState,
+.badgeSuccess {
+  background: rgba(20, 158, 97, 0.16);
+  border-radius: 6px;
+  color: var(--kraken-green-dark);
+}
+
+.badgeNeutral {
+  background: rgba(104, 107, 130, 0.12);
+  border-radius: var(--radius-badge);
+  color: #484b5e;
+}
+
+/* --- Elevation: whisper level only --------------------------------------- */
+.runtimePanel,
+.workPanel,
+.modelPopover,
+.allowanceCard,
+.composerShell,
+.composerCard {
+  box-shadow: var(--panel-shadow);
+}
+
+/* --- Links --------------------------------------------------------------- */
+a {
+  color: var(--kraken-purple);
+}
+
+/* --- Kill decorative chrome the previous theme relied on ----------------- */
+.landingGlyph::before,
+.landingGlyph::after,
+.brandGlyph::before,
+.brandGlyph::after {
+  display: none;
+}
+
+/* Continuous ambient motion is a battery cost with no informational value.
+   State-bearing motion (the working pulse, the thinking dots) is kept. */
+@keyframes mascotDrift { from, to { transform: none; } }
+@keyframes sidebarDrift { from, to { transform: none; } }
+@keyframes previewDrift { from, to { transform: none; } }
+@keyframes welcomeBob { from, to { transform: none; } }
+@keyframes jellyPropulsion { from, to { transform: none; } }
+@keyframes thoughtDrift { from, to { transform: none; } }

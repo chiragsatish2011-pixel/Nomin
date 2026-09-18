@@ -7,6 +7,7 @@ import { perf } from "@/lib/agent/perf";
 import type { AgentStatus } from "@/lib/agent/types";
 import { registerActiveTurn, unregisterActiveTurn } from "@/lib/agent/turn-control";
 import { withByokProvider } from "@/lib/nim/byok-context";
+import { logSwallowedFailure } from "@/lib/nim/diagnostics";
 
 // Long agent turns stream NDJSON with 15s heartbeats. Without an explicit
 // maxDuration, serverless hosts (Vercel Hobby 10s / Pro 60s) kill the stream
@@ -100,7 +101,11 @@ export async function POST(req: Request) {
 
         try {
           await withByokProvider(request.byok, () => runTurn(request, send, t0, turnController.signal));
-        } catch {
+        } catch (turnError) {
+          // The outermost catch used to discard its error entirely, so a turn
+          // that never reached a provider and a turn that failed mid-build both
+          // rendered the same "Trion paused" card with nothing in the log.
+          logSwallowedFailure("chat.route.runTurn", turnError);
           const errorEvent: AgentStreamEvent = {
             type: "error",
             error: {

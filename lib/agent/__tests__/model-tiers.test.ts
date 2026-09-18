@@ -33,6 +33,9 @@ describe("model tier routing", () => {
   it("preserves the existing 1.4 defaults", () => {
     const environment = {};
     expect(providerModelForTier("trion-1.4", false, environment)).toBe("nvidia/nemotron-3-ultra-550b-a55b");
-    expect(providerModelForTier("trion-1.4", true, environment)).toBe("nvidia/nemotron-3-nano-30b-a3b");
+    // The previous default here, `nvidia/nemotron-3-nano-30b-a3b`, was retired by
+    // the provider (HTTP 410 Gone, EOL 2026-09-01). Because planning is a
+    // fast-tier call, that dead id broke every build request on a default install.
+    expect(providerModelForTier("trion-1.4", true, environment)).toBe("nvidia/nemotron-3-super-120b-a12b");
   });
 });

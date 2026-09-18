@@ -3,6 +3,7 @@
 // and picks the activity status (from ACTIVITY_LIST) that best matches what the task actually is.
 
 import type { NormalInput, IntentDoc } from "../types";
+import { logSwallowedFailure } from "@/lib/nim/diagnostics";
 import { modelGateway } from "../model-gateway";
 import { currentTurnSignal } from "../turn-control";
 import type { NimMessage } from "../types";
@@ -200,9 +201,22 @@ const CONVERSATIONAL_ACTIVITIES = new Set([
  *  specific to act on and re-asking "what would you like?" is never right. */
 const CONCRETE_REFERENCE = /(?:[\w.-]+\/[\w.-]+)|(?:\b[\w-]+\.(?:tsx?|jsx?|css|scss|html|json|md|ya?ml|py|rs|go|java|rb|sh|toml)\b)|`[^`]+`|"[^"]{3,}"|'[^']{3,}'/;
 
+/** A self-contained arithmetic expression: digits and operators only, with at
+ *  least one digit. "2+2", "10/5", "(3+4)*2". */
+const COMPLETE_EXPRESSION = /^[\d\s().+\-*/^%]*\d[\d\s().+\-*/^%]*$/;
+
 function isAmbiguous(text: string): boolean {
   const lower = text.toLowerCase().trim();
-  // Very short inputs that are likely incomplete
+  // A SHORT input is not the same thing as an INCOMPLETE one.
+  //
+  // This length test used to flag every message under four characters as
+  // ambiguous, which silently overrode the model's own classification. "2+2" is
+  // three characters and perfectly complete, so asking the user to clarify it
+  // is not caution — it is a wrong answer to a question that had one. That was
+  // masked for as long as a hardcoded preset table answered "2+2" before
+  // classification ever ran; with the presets gone it surfaced immediately as
+  // "2+2" being met with "what outcome should I help you create?".
+  if (COMPLETE_EXPRESSION.test(lower)) return false;
   if (lower.length < 4) {
     // But known greetings are NOT ambiguous
     if (GREETING_WORDS.test(lower)) return false;
@@ -428,6 +442,10 @@ Use these established conventions to resolve implementation details when they an
     // A stopped turn stays stopped: the ambient signal aborted this call, and
     // guessing an intent for it would resurrect cancelled work as a new turn.
     if (currentTurnSignal()?.aborted) throw error;
+    // Falling back to keywords is a legitimate degradation, but it must never
+    // be SILENT: an unconfigured provider used to look exactly like a healthy
+    // 35ms classification here, which is why a dead integration went unnoticed.
+    logSwallowedFailure("intent.classification", error);
     // Fallback: keyword heuristic keeps the activity task-appropriate.
     // Task signals always win over question/greeting words ("can you fix X?").
     // Ambiguous conversational patterns should be needs_clarification, not direct_answer.

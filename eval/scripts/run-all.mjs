@@ -16,7 +16,7 @@ const LEVELS = [
   { name: "online", script: "online/runner.mjs", desc: "Online/Production-Condition (concurrent load)" },
   { name: "security", script: "security/run.mjs", desc: "Security (5 attack vectors)" },
   { name: "trajectory", script: "trajectory/run.mjs", desc: "Trajectory-Level (tool trace assertions)" },
-  { name: "component", script: "component/run.mjs", desc: "Component-Level (classifier, critic, key-pool)" },
+  { name: "component", script: "component/run.mjs", desc: "Component-Level (classifier, critic, rate lane)" },
 ];
 
 async function runLevel(level, tag, extraArgs = []) {

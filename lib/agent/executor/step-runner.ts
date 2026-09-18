@@ -73,15 +73,11 @@ export async function executeSteps(
     newHistory.push(turn);
   };
   const checkpoint = () => onCheckpoint?.({ toolTrace: [...toolTrace], artifacts: [...artifacts] });
-  let fallbackNotified = false;
-  const notifyFallback = () => {
-    // A single provider failure can be observed by several bounded layers
-    // (request retry, key failover, then route failover). Repeating the same
-    // sentence for each layer makes a healthy recovery look like a frozen loop.
-    if (fallbackNotified) return;
-    fallbackNotified = true;
-    emit({ type: "progress", stage: "paused", message: "The first execution path was unavailable. Trion is continuing with the next available path." });
-  };
+  // REMOVED: a "the first execution path was unavailable, continuing with the
+  // next available path" progress notice. With a single credential and a single
+  // provider there is no second path to continue to, so that sentence could
+  // only ever have been false. A genuine failure now surfaces as a real error
+  // instead of a reassuring message about a fallback that does not exist.
   const throwIfCancelled = () => {
     if (!signal?.aborted) return;
     checkpoint();
@@ -199,7 +195,6 @@ export async function executeSteps(
               // cancelled turn keep working for up to three minutes.
               signal,
               onRoute: (route) => { providerPath = route; },
-              onFallback: notifyFallback,
             },
           );
           const content = unwrapFileBody(rawContent, directWritePath);
@@ -268,7 +263,6 @@ export async function executeSteps(
               reliability: authoringReliability,
               signal,
               onRoute: (route) => { providerPath = route; },
-              onFallback: notifyFallback,
             });
           } catch (error) {
             throwIfCancelled();
@@ -303,7 +297,6 @@ export async function executeSteps(
           reliability: authoringReliability,
           signal,
           onRoute: (route) => { providerPath = route; },
-          onFallback: notifyFallback,
         });
       } catch (error) {
         throwIfCancelled();

@@ -33,7 +33,6 @@ import {
   recordOpenQuestion,
   recordRefinement,
   renderTaskState,
-  dismissOpenQuestions,
   resumePlan,
   resolveOpenQuestions,
   type TaskState,
@@ -45,7 +44,6 @@ import { planNeedsApproval } from "../approval";
 import { sanitize as sanitizeError } from "../sanitize";
 import { buildClarificationOutput, toClarificationQuestion } from "../clarification";
 import { clarificationContextFor } from "../clarification-context";
-import { directFastReply } from "../direct-fast-path";
 import { evaluateVerification } from "../verification";
 import { reviewCodingCompletion, shouldRunCodingReview } from "../quality-chain";
 import { perf } from "../perf";
@@ -53,6 +51,7 @@ import { withLedgerSession } from "../token-ledger";
 import { withTurnSignal } from "../turn-control";
 import { completeProgress, pausedProgress, planProgress } from "../progress-updates";
 import type { ByokProviderConfig } from "@/lib/nim/byok-context";
+import { logSwallowedFailure } from "@/lib/nim/diagnostics";
 
 const TIMING_ENABLED = process.env.TRION_PERF === "1";
 
@@ -339,32 +338,14 @@ async function runTurnInner(
     // Persist user message to session history
     appendTurn(ctx.sessionId, { role: "user", content: request.userText });
 
-    // A deterministic local reply is both more correct and dramatically
-    // cheaper than asking a provider to classify and restate "2 + 2". Keep
-    // this ahead of task-state/planning, but intentionally narrow so every
-    // non-trivial or context-dependent turn keeps the full agent contract.
-    const immediateReply = directFastReply(ctx.input.user_message);
-    if (immediateReply) {
-      // A deterministic social/identity reply is an explicit context switch,
-      // not an answer to an earlier build question. Clear the unresolved branch
-      // so the next real request starts from what the user actually says.
-      const priorTaskState = getTaskState(ctx.sessionId);
-      if (priorTaskState?.openQuestions.length) {
-        dismissOpenQuestions(priorTaskState);
-        setTaskState(ctx.sessionId, priorTaskState);
-      }
-      const output = buildFinalOutput(
-        { message: immediateReply, next_action_hint: "Ask me anything you'd like to explore or build." },
-        null,
-        [],
-        [],
-        "done"
-      );
-      appendTurn(ctx.sessionId, { role: "assistant", content: immediateReply });
-      emitOutput(emit, output);
-      emit({ type: "result", data: output });
-      return output;
-    }
+    // NOTE (removed): a hardcoded `directFastReply` short-circuit used to answer
+    // greetings, "who made you", capability questions and simple arithmetic from
+    // regexes BEFORE any model call. It made the integration look alive while
+    // zero network requests were being made — "2+2" returned "4" in 14ms from a
+    // regex, and every input those patterns did not match fell through to a
+    // generic error. Every message now goes through real intent classification
+    // and a real model call. Identity is enforced by the IDENTITY LOCK in the
+    // system prompts (see lib/agent/system-prompt.ts), not by a preset table.
 
     // Structured working memory for this task — created on the first turn,
     // advanced on every one after. Fed to the execution, synthesis and
@@ -431,6 +412,7 @@ async function runTurnInner(
         // Cancellation must keep propagating to the outer handler — answering
         // a stopped turn deterministically would resurrect it as a result.
         if (synthesisError instanceof TurnCancelledError || signal?.aborted) throw synthesisError;
+        logSwallowedFailure("direct_answer.synthesis", synthesisError);
         // A reply that cannot be composed is NOT a planning failure: no plan
         // was ever attempted, so the "build plan" recovery copy would lie
         // about the stage. Answer deterministically from the failure class —

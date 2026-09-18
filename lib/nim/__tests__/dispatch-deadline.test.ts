@@ -9,9 +9,16 @@
 // The defect: `opts.timeoutMs` only ever armed an AbortController around the
 // in-flight `fetch`. It never bounded
 //   (a) time a task spends waiting in the queue,
-//   (b) provider-directed `retry-after` backoff, which is deliberately uncapped,
-//   (c) route-fallback hops, each of which restarts the per-attempt budget.
+//   (b) provider-directed `retry-after` backoff, which is deliberately uncapped.
 // So a call declaring a 30s budget could legitimately stay pending for minutes.
+//
+// SINGLE-LANE UPDATE: two cases here used to assert cross-provider failover
+// (the build lane 429s, hosted answers). That second lane has been removed
+// along with the key pool, so those cases described a topology that no longer
+// exists and were deleted rather than rewritten into something they never
+// tested. What remains is the part that still holds with one credential: a call
+// must never outlive its declared budget, and one blocked call must never
+// freeze the queue behind it.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -20,12 +27,11 @@ type FetchMock = ReturnType<typeof vi.fn>;
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_FETCH = globalThis.fetch;
 
-/** The pools are memoised on globalThis, so a fresh module registry is not
- *  enough on its own — the cached pools must be dropped too. */
+/** The lane is memoised on globalThis, so a fresh module registry is not
+ *  enough on its own — the cached lane must be dropped too. */
 function resetProviderState() {
   const store = globalThis as Record<string, unknown>;
-  delete store.__trionKeyPool;
-  delete store.__trionGeminiPool;
+  delete store.__trionKeyLane;
   vi.resetModules();
 }
 
@@ -52,14 +58,14 @@ function okResponse(payload: unknown): Response {
   } as unknown as Response;
 }
 
-/** A valid Gemini-shaped success carrying a schema-valid AgentTurn. */
-function geminiTurn(): Response {
+/** An OpenAI-shaped success carrying a schema-valid AgentTurn. */
+function hostedTurn(path = "a.ts"): Response {
   return okResponse({
-    candidates: [{
-      content: { parts: [{ text: JSON.stringify({ thought: "ok", action: "read_file", action_input: { path: "a.ts" }, done: false }) }] },
-      finishReason: "STOP",
+    choices: [{
+      message: { content: JSON.stringify({ thought: "ok", action: "read_file", action_input: { path }, done: false }) },
+      finish_reason: "stop",
     }],
-    usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+    usage: { prompt_tokens: 10, completion_tokens: 5 },
   });
 }
 
@@ -81,9 +87,6 @@ beforeEach(() => {
   process.env = {
     ...ORIGINAL_ENV,
     TRION_API_KEY: "hosted-test-key",
-    GEMINI_API_KEY_1: "gemini-test-key-1",
-    GEMINI_API_KEY_2: "gemini-test-key-2",
-    GEMINI_MODEL_EXECUTOR: "gemini-test-model",
     // Remove dispatch pacing so the test measures the deadline, not the pacer.
     TRION_MIN_INTERVAL_MS: "0",
     TRION_RPM_LIMIT: "1000",
@@ -99,10 +102,10 @@ afterEach(() => {
 });
 
 describe("model dispatch has a real end-to-end deadline", () => {
-  it("settles an execution decision within its declared budget when every route is rate-limited with a long retry-after", async () => {
-    // Both routes answer 429 with a two-minute provider-directed backoff. This
-    // is the exact real-world condition behind the recurring Step 3 stall: a
-    // shared free-tier allowance answering with a long cooldown.
+  it("settles an execution decision within its declared budget when the lane is rate-limited with a long retry-after", async () => {
+    // The lane answers 429 with a two-minute provider-directed backoff. This is
+    // the exact real-world condition behind the recurring Step 3 stall: a shared
+    // free-tier allowance answering with a long cooldown.
     const fetchMock: FetchMock = vi.fn(async () => rateLimitedResponse(120));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
@@ -144,62 +147,21 @@ describe("model dispatch has a real end-to-end deadline", () => {
     const guarded = call.catch(() => "rejected");
 
     expect(await settlesWithin(guarded, 2_500)).toBe("settled");
-    await expect(call).rejects.toThrow(/limit|capacity|retry/i);
+    await expect(call).rejects.toThrow(/limit|capacity|retry|pausing/i);
   });
 
-  it("does not queue behind a cooled build lane once its daily quota is spent", async () => {
-    // THE REAL PRODUCTION CONDITION, reproduced.
-    //
-    // The build lane's free tier is a DAILY request quota (measured live: 20
-    // requests/day/model, answering RESOURCE_EXHAUSTED with no `retry-after`
-    // header). Once spent, every remaining call that day finds the pool cooling.
-    // The pool cools for 60s on a 429, so each subsequent execution decision used
-    // to wait out a full minute before failing over to a hosted route that was
-    // healthy and idle the whole time — and, worse, `pump` returned while that
-    // task was blocked, freezing every unrelated hosted call behind it.
-    const seen: string[] = [];
-    const fetchMock: FetchMock = vi.fn(async (url: unknown) => {
-      const href = String(url);
-      seen.push(href.includes("generativelanguage") ? "gemini" : "hosted");
-      if (href.includes("generativelanguage")) return rateLimitedResponse(0);
-      return okResponse({
-        choices: [{
-          message: { content: JSON.stringify({ thought: "hosted", action: "read_file", action_input: { path: "c.ts" }, done: false }) },
-          finish_reason: "stop",
-        }],
-        usage: { prompt_tokens: 10, completion_tokens: 5 },
-      });
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const { queuedCompletion } = await import("../internal-client");
-
-    // First call spends the lane and cools the pool.
-    await queuedCompletion([{ role: "user", content: "first" }], 256, {
-      label: "execution_decision", timeoutMs: 2_000, maxAttempts: 2, deadlineMs: 8_000,
-    });
-
-    // The next decision must NOT sit out the cooldown: the hosted route is ready.
-    const started = Date.now();
-    const turn = await queuedCompletion([{ role: "user", content: "second" }], 256, {
-      label: "execution_decision", timeoutMs: 2_000, maxAttempts: 2, deadlineMs: 8_000,
-    });
-    const elapsed = Date.now() - started;
-
-    expect(turn.action).toBe("read_file");
-    // Comfortably under the 60s pool cooldown that used to be paid per step.
-    expect(elapsed).toBeLessThan(3_000);
-    // And it must not have burned another doomed request on the cooled lane.
-    expect(seen.slice(2)).not.toContain("gemini");
-  });
-
-  it("does not let one blocked build call freeze unrelated hosted work", async () => {
+  it("does not let one blocked call freeze unrelated work behind it", async () => {
     // Head-of-line blocking: `pump` selected the single highest-priority ready
-    // task and RETURNED if it could not get a key, so one cooled build key
+    // task and RETURNED if it could not get the lane, so one cooled credential
     // stalled the whole queue — including the classification call that gates the
-    // user's first visible feedback.
-    const fetchMock: FetchMock = vi.fn(async (url: unknown) => {
-      if (String(url).includes("generativelanguage")) return rateLimitedResponse(0);
+    // first visible feedback. With one lane this matters MORE, not less: there
+    // is no second lane for the rest of the queue to escape to.
+    let firstCall = true;
+    const fetchMock: FetchMock = vi.fn(async () => {
+      if (firstCall) {
+        firstCall = false;
+        return rateLimitedResponse(0);
+      }
       return okResponse({
         choices: [{ message: { content: "classified" }, finish_reason: "stop" }],
         usage: { prompt_tokens: 5, completion_tokens: 2 },
@@ -209,13 +171,8 @@ describe("model dispatch has a real end-to-end deadline", () => {
 
     const { queuedCompletion, queuedTextCompletion } = await import("../internal-client");
 
-    // Cool the build pool first.
-    await queuedCompletion([{ role: "user", content: "spend" }], 256, {
-      label: "execution_decision", timeoutMs: 2_000, maxAttempts: 2, deadlineMs: 8_000,
-    }).catch(() => undefined);
-
-    // A build-routed call that cannot run, enqueued at HIGHER priority (lower
-    // number) than the hosted classification behind it.
+    // A call that cannot run, enqueued at HIGHER priority (lower number) than
+    // the classification behind it.
     const blocked = queuedCompletion([{ role: "user", content: "blocked" }], 256, {
       label: "execution_decision", priority: 0, timeoutMs: 2_000, maxAttempts: 1, deadlineMs: 8_000,
     }).catch(() => "failed");
@@ -233,7 +190,7 @@ describe("model dispatch has a real end-to-end deadline", () => {
 
   it("still completes a healthy call well inside the deadline", async () => {
     // The deadline must not become a new failure source on the happy path.
-    const fetchMock: FetchMock = vi.fn(async () => geminiTurn());
+    const fetchMock: FetchMock = vi.fn(async () => hostedTurn());
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { queuedCompletion } = await import("../internal-client");
@@ -280,34 +237,5 @@ describe("model dispatch has a real end-to-end deadline", () => {
     });
 
     await expect(call).rejects.toThrow(/timed out|could not complete/i);
-  });
-
-  it("falls back to the hosted route and succeeds there when the build route is exhausted", async () => {
-    // Guaranteed fallback: Gemini 429s, hosted answers. The user must get a real
-    // result, not a stall and not an error.
-    const fetchMock: FetchMock = vi.fn(async (url: unknown) => {
-      const href = String(url);
-      if (href.includes("generativelanguage")) return rateLimitedResponse(120);
-      return okResponse({
-        choices: [{
-          message: { content: JSON.stringify({ thought: "hosted", action: "read_file", action_input: { path: "b.ts" }, done: false }) },
-          finish_reason: "stop",
-        }],
-        usage: { prompt_tokens: 10, completion_tokens: 5 },
-      });
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const { queuedCompletion } = await import("../internal-client");
-
-    const turn = await queuedCompletion([{ role: "user", content: "decide" }], 256, {
-      label: "execution_decision",
-      timeoutMs: 2_000,
-      maxAttempts: 2,
-      deadlineMs: 8_000,
-    });
-
-    expect(turn.action).toBe("read_file");
-    expect((turn.action_input as { path?: string }).path).toBe("b.ts");
   });
 });

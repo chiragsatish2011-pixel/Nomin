@@ -19,8 +19,6 @@ import {
   Sparkles,
   X
 } from "lucide-react";
-import { AmbientCanvas } from "@/app/components/AmbientCanvas";
-import { BootIntro } from "@/app/components/BootIntro";
 import { JellyfishMark } from "@/app/components/JellyfishMark";
 import { LandingJellyfish } from "@/app/components/LandingJellyfish";
 import { readConnection, safeConnectionLabel, type ByokConfig } from "@/app/lib/byok-client";
@@ -558,7 +556,10 @@ export default function Home() {
   const [allowanceDismissed, setAllowanceDismissed] = useState(false);
   // Match BootIntro's first render. This avoids kicking off landing animations
   // behind the opaque intro before the boot overlay has released the page.
-  const [introActive, setIntroActive] = useState(true);
+  // The boot splash is gone (it was a full-screen animated gate in front of a
+  // workspace that was already usable), so there is nothing left to wait for:
+  // the WebContainer prewarms on mount instead of after an animation.
+  const introActive = false;
   const [traceNodes, setTraceNodes] = useState<TraceNode[]>([]);
   const [agentOutput, setAgentOutput] = useState<AgentOutput | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -1599,7 +1600,6 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
     <main
       className={[
         "zenApp",
-        introActive ? "introActive" : "",
         sidebarCollapsed ? "sidebarCollapsed" : "",
         // The composer is position:fixed, so it cannot see the side panel in
         // the flex row. This tells it to stop where the panel starts —
@@ -1609,9 +1609,6 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
         .filter(Boolean)
         .join(" ")}
     >
-      <AmbientCanvas />
-      <div className="ambientVeil" />
-      <BootIntro onActiveChange={setIntroActive} />
 
       {allowanceExhausted ? <section className="allowanceModal" role="dialog" aria-modal="true" aria-labelledby="allowance-title">
         <div className="allowanceCard">

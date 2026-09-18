@@ -121,7 +121,17 @@ describe("resume fallback without any checkpoint", () => {
   });
 
   it("restarts as a fresh turn with a notice instead of dead-ending", async () => {
-    // A greeting resolves deterministically with no model call.
+    // This used to assert that a greeting resolved from a hardcoded preset with
+    // no model call. That preset table is gone: it answered a handful of
+    // patterns without ever contacting a provider and failed everything else,
+    // which is what disguised a completely dead integration. A resumed turn
+    // with no recoverable checkpoint now does what any fresh turn does — it
+    // classifies and answers via the model — and still emits the notice.
+    (classifyIntent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      intent: "direct_answer",
+      reason: "greeting",
+    });
+    hoisted.completeText.mockResolvedValue("Hello! How can I help?");
     const events: unknown[] = [];
     const output = await runTurn(
       {
@@ -142,6 +152,9 @@ describe("resume fallback without any checkpoint", () => {
       stage: "notice",
       message: "Continuing from your last message — prior progress couldn't be restored.",
     });
-    expect(classifyIntent).not.toHaveBeenCalled();
+    // The point of the change: even a greeting now reaches real classification
+    // and a real model call instead of a regex lookup table.
+    expect(classifyIntent).toHaveBeenCalled();
+    expect(hoisted.completeText).toHaveBeenCalled();
   });
 });

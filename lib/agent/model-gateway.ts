@@ -43,8 +43,7 @@ export interface ModelOptions {
   signal?: AbortSignal;
   /** Internal audit callback. The route is stripped before AgentOutput reaches
    * the browser, so provider identity never becomes user-facing content. */
-  onRoute?: (route: "hosted" | "gemini") => void;
-  onFallback?: (from: "hosted" | "gemini", to: "hosted" | "gemini") => void;
+  onRoute?: (route: "hosted") => void;
   /** Per-turn call budget. Counted at gateway entry, so every stage, retry,
    *  repair, and review chain draws from the same allowance. Absent means
    *  unenforced (bench/offline contexts). */
@@ -72,29 +71,42 @@ export interface ModelOptions {
  * stricter than that default. See `callDeadlineMs` in internal-client.
  */
 export const CALL_RELIABILITY: Record<CallType, { timeoutMs: number; maxAttempts: number; deadlineMs?: number }> = {
-  // User-facing gates get a second attempt: on shared free-tier capacity a
-  // single slow response is common (measured), and one retry rides through it
-  // without changing healthy-path cost (one request stays one request).
-  classification: { timeoutMs: 15_000, maxAttempts: 2 },
-  direct_answer: { timeoutMs: 20_000, maxAttempts: 2 },
-  plan: { timeoutMs: 45_000, maxAttempts: 2 },
-  // Structured plan call: same bounds as prompted planning. The label differs
-  // (plan_tools, not plan) so routing stays on the hosted function-calling
-  // route instead of the Gemini build lane.
-  plan_tools: { timeoutMs: 45_000, maxAttempts: 2 },
-  plan_only: { timeoutMs: 30_000, maxAttempts: 2 },
-  execution_decision: { timeoutMs: 30_000, maxAttempts: 2 },
-  synthesis: { timeoutMs: 30_000, maxAttempts: 2 },
-  synthesis_fallback: { timeoutMs: 20_000, maxAttempts: 1 },
+  // MEASURED, single-key lane (2026-09-18, live against the configured
+  // endpoint). These are no longer guesses:
+  //   fast tier  (super-120b) planning prompt : 11.8s, 11.9s  — consistent
+  //   primary    (ultra-550b) planning prompt :  3.2s, 71.6s  — huge variance
+  //
+  // That 71.6s is the number that matters. `plan` previously allowed 45s x 2,
+  // so a perfectly healthy primary-tier response was aborted mid-flight and
+  // retried — burning a second slow request to reach the same timeout. With one
+  // credential there is no other lane to absorb that, so every budget below is
+  // sized above the measured worst case rather than the median.
+  //
+  // These bound the WAIT, not the spend: a healthy call still costs one request
+  // and returns as soon as the model does.
+  classification: { timeoutMs: 30_000, maxAttempts: 2 },
+  direct_answer: { timeoutMs: 45_000, maxAttempts: 2 },
+  // Planning is a fast-tier call (see planner/generator.ts). 60s is ~5x the
+  // measured fast-tier time, which leaves room for a cold start without
+  // inviting an unbounded wait.
+  plan: { timeoutMs: 60_000, maxAttempts: 2 },
+  plan_tools: { timeoutMs: 60_000, maxAttempts: 2 },
+  plan_only: { timeoutMs: 45_000, maxAttempts: 2 },
+  // The one call that runs on the primary tier and writes whole files. Sized
+  // past the 71.6s worst case observed on that model. One attempt beyond the
+  // first is kept for genuine transport failures, not for timeouts.
+  execution_decision: { timeoutMs: 120_000, maxAttempts: 2 },
+  synthesis: { timeoutMs: 45_000, maxAttempts: 2 },
+  synthesis_fallback: { timeoutMs: 30_000, maxAttempts: 1 },
   // Review roles run only after a substantial deliverable. Their prompts and
   // outputs are deliberately small, so a bounded single attempt is both less
   // expensive and safer than retrying a subjective review.
-  coding_critic: { timeoutMs: 20_000, maxAttempts: 1 },
-  coding_synthesizer: { timeoutMs: 25_000, maxAttempts: 1 },
-  design_critic: { timeoutMs: 20_000, maxAttempts: 1 },
-  design_synthesizer: { timeoutMs: 30_000, maxAttempts: 1 },
-  design_recheck: { timeoutMs: 20_000, maxAttempts: 1 },
-  judge: { timeoutMs: 30_000, maxAttempts: 1 },
+  coding_critic: { timeoutMs: 45_000, maxAttempts: 1 },
+  coding_synthesizer: { timeoutMs: 45_000, maxAttempts: 1 },
+  design_critic: { timeoutMs: 45_000, maxAttempts: 1 },
+  design_synthesizer: { timeoutMs: 60_000, maxAttempts: 1 },
+  design_recheck: { timeoutMs: 45_000, maxAttempts: 1 },
+  judge: { timeoutMs: 45_000, maxAttempts: 1 },
 };
 
 // AUDIT NOTE (tier right-sizing).
@@ -285,7 +297,6 @@ export const modelGateway = {
       deadlineMs: reliability.deadlineMs,
       signal: opts.signal,
       onRoute: opts.onRoute,
-      onFallback: opts.onFallback,
       onUsage: usageSink(opts, messages),
     });
     perf("model.complete", Date.now() - start, {
@@ -330,7 +341,6 @@ export const modelGateway = {
       deadlineMs: reliability.deadlineMs,
       signal: opts.signal,
       onRoute: opts.onRoute,
-      onFallback: opts.onFallback,
       onUsage: usageSink(opts, messages),
     });
     perf("model.completeText", Date.now() - start, {
