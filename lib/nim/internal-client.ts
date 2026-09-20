@@ -787,7 +787,7 @@ async function callProviderText(
     : providerModelForTier(tier, fast);
   const baseUrl = (byok
     ? byok.baseUrl
-    : (process.env.TRION_BASE_URL || process.env.NIM_BASE_URL || "https://integrate.api.nvidia.com/v1"))?.replace(/\/$/, "");
+    : (process.env.COLIBRI_BASE_URL || process.env.TRION_BASE_URL || process.env.NIM_BASE_URL || "https://integrate.api.nvidia.com/v1"))?.replace(/\/$/, "");
   const apiKey = byok ? byok.apiKey : providerKey;
 
   if (!model || !baseUrl || !apiKey) {

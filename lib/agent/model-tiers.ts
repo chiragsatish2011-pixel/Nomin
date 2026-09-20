@@ -62,7 +62,7 @@ function tierEnvironment(tier: AgentModel, environment: ModelEnvironment = proce
       };
     case "trion-1.4":
       return {
-        primary: configured(environment.TRION_MODEL_PRIMARY) ?? configured(environment.NIM_MODEL_PRIMARY) ?? DEFAULT_PRIMARY_MODEL,
+        primary: configured(environment.COLIBRI_MODEL) ?? configured(environment.TRION_MODEL_PRIMARY) ?? configured(environment.NIM_MODEL_PRIMARY) ?? DEFAULT_PRIMARY_MODEL,
         fast: configured(environment.TRION_MODEL_FAST) ?? DEFAULT_FAST_MODEL,
       };
   }
