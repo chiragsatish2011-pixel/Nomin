@@ -42,7 +42,7 @@ function positiveNumber(value: string | undefined, fallback: number): number {
  * not silently lose its credential on upgrade.
  */
 export function providerKeyFromEnv(env: Record<string, string | undefined> = process.env): ProviderKeyConfig | null {
-  const secret = (env.TRION_API_KEY ?? env.NIM_API_KEY)?.trim();
+  const secret = (env.COLIBRI_API_KEY ?? env.TRION_API_KEY ?? env.NIM_API_KEY)?.trim();
   if (!secret) return null;
   return {
     secret,
