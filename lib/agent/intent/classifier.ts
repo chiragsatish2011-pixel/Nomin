@@ -16,7 +16,7 @@ const THANKS_WORDS = /\b(thanks|thank\s?you|thx|appreciate)\b/i;
 const QUESTION_WORDS = /\b(what|how|why|when|where|who|which|explain|tell\s?me|is\s?it|can\s?you|does)\b/i;
 const IDENTITY_WORDS = /\b(who\s+(?:(?:are|r)\s+you|(?:made|created|built|developed)\s+(?:you|u|trion))|what\s+(are|r)\s+you|wt\s+(are|r)\s+u|wt\s+is\s+u|wt\s+si\s+ur?\s+name|wt\s+is\s+ur?\s+name|who\s+am\s+i\s+talking\s+to)\b/i;
 const CAPABILITY_QUESTIONS =
-  /\b(?:wt|what|which)\s+(?:can|could)\s+(?:you|u)\s+(?:do|help|make|build)\b|\b(?:wt|what)\s+(?:you|u)\s+can\s+do\b|\bwhat\s+are\s+(?:your|ur)\s+capabilities\b|\bshow\s+me\s+what\s+(?:you|u)\s+can\s+do\b/i;
+  /\b(?:wt|what|which)\s+(?:can|could)\s+(?:you|u)\s+(?:do|help|make|build)\b|\b(?:wt|what)\s+(?:you|u)\s+can\s+do\b|\bwhat\s+are\s+(?:your|ur)\s+capabilities\b|\bshow\s+me\s+what\s+(?:you|u)\s+can\s+do\b|\bwhat\s+kind\s+of\s+questions\s+should\s+i\s+ask\s+you\b|\bwhat\s+can\s+u\s+do\s*\??\b/i;
 // Vague/ambiguous patterns that suggest the user hasn't expressed a clear intent yet
 // These match general capability/exploration questions that need clarification before action
 // EXPLICITLY EXCLUDE clear identity questions ("what are you") and clear capability questions ("what can you do")

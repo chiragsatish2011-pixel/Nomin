@@ -24,7 +24,7 @@ import type { ToolResult } from "../types";
  * for three minutes and then spending two model retries on an impossible
  * recovery. Normal WebContainer boot/install is prewarmed on the client; 45s
  * still leaves room for a cold start while making the failure actionable. */
-export const CLIENT_EXECUTION_TIMEOUT_MS = Number(process.env.TRION_CLIENT_EXECUTION_TIMEOUT_MS ?? 45_000);
+export const CLIENT_EXECUTION_TIMEOUT_MS = Number(process.env.TRION_CLIENT_EXECUTION_TIMEOUT_MS ?? 120_000);
 /** An active browser tool may be installing or building. Heartbeats extend the
  * idle timer, but never beyond this absolute ceiling. */
 export const CLIENT_EXECUTION_MAX_MS = Math.max(
