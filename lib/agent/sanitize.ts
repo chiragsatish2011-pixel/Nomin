@@ -109,7 +109,7 @@ export function sanitizeTraceEntry(entry: {
   output: string;
   status: "success" | "error";
   attempt: number;
-  path_used?: "hosted" | "gemini" | "deterministic";
+  path_used?: "hosted" | "local" | "deterministic";
 }): {
   step_id: number;
   tool_name: string;
@@ -117,7 +117,7 @@ export function sanitizeTraceEntry(entry: {
   output: string;
   status: "success" | "error";
   attempt: number;
-  path_used?: "hosted" | "gemini" | "deterministic";
+  path_used?: "hosted" | "local" | "deterministic";
 } {
   // write_file content is the artifact being created: it stays byte-exact so
   // the trace remains evidence of what is actually on disk (see

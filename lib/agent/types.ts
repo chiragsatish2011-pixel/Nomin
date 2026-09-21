@@ -426,7 +426,7 @@ export type ToolTraceEntry = {
   status: "success" | "error";
   attempt: number;
   /** Internal provider audit only. Removed before the public AgentOutput. */
-    path_used?: "hosted" | "gemini" | "deterministic";
+    path_used?: "hosted" | "local" | "deterministic";
 };
 
 /** Inline renderable artifact surfaced alongside the message. */

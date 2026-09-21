@@ -4,6 +4,7 @@
 // reason about.
 
 import type { AgentModel } from "./types";
+import { localLaneFromEnv } from "@/lib/nim/local-lane";
 
 /** Only string-keyed reads happen here, so the parameter is typed by what is
  *  USED rather than by NodeJS.ProcessEnv. That type now requires NODE_ENV, so
@@ -132,5 +133,8 @@ export function hasProviderCredential(environment: ModelEnvironment = process.en
   // are gone from the codebase, so accepting them here would report a
   // credential the dispatcher cannot actually use. `NIM_API_KEY` survives only
   // as a rename alias so an older deployment does not lose its key on upgrade.
-  return Boolean(configured(environment.TRION_API_KEY) ?? configured(environment.NIM_API_KEY));
+  if (configured(environment.TRION_API_KEY) ?? configured(environment.NIM_API_KEY)) return true;
+  // A local model is a credential-free provider. It serves every tier, so a
+  // local-only deployment must not be reported as having nothing.
+  return localLaneFromEnv(environment) !== null;
 }

@@ -3,6 +3,14 @@ import { providerModelForTier } from "@/lib/agent/model-tiers";
 import { estimateCallTokens } from "./rate-governor";
 import { createCircuitBreaker } from "./circuit-breaker";
 import { createKeyLane, providerKeyFromEnv, type KeyLease } from "./single-key";
+import {
+  localLaneFromEnv,
+  localLaneReady,
+  noteLocalFailure,
+  noteLocalFallback,
+  noteLocalSuccess,
+  type LocalLaneConfig,
+} from "./local-lane";
 import { logProviderRequest, logProviderResponse, logProviderError } from "./diagnostics";
 import { currentByokProvider, type ByokProviderConfig } from "./byok-context";
 import { currentTurnSignal } from "@/lib/agent/turn-control";
@@ -34,6 +42,16 @@ export type ProviderToolChoice =
  *  gateway so the agent layer can attribute real cost per call type — the
  *  char/4 estimate cannot see completion tokens at all, and a reasoning model
  *  spends most of its output budget there. */
+/**
+ * Which lane served a call.
+ *
+ * "local" is a model running on the user's own machine (see local-lane.ts),
+ * "hosted" is the configured NVIDIA endpoint, "byok" is the user's own
+ * connected provider. A turn may cross from local to hosted mid-call; the
+ * route reported is the one that actually produced the answer.
+ */
+export type ProviderRoute = "hosted" | "local";
+
 export type CompletionUsage = {
   model: string;
   promptTokens: number;
@@ -107,8 +125,8 @@ export type CompletionOptions = {
   signal?: AbortSignal;
   /** There is exactly one route. Kept as a field so telemetry and the BYOK
    *  branch keep a stable shape; it no longer selects between providers. */
-  route?: "hosted";
-  onRoute?: (route: "hosted") => void;
+  route?: ProviderRoute;
+  onRoute?: (route: ProviderRoute) => void;
   /** OpenAI-shaped function-calling passthrough. Sent verbatim on the
    *  OpenAI-compatible route only (the hosted lane plus OpenAI-shaped BYOK);
    *  ignored on the Anthropic BYOK route, which uses a different tool schema.
@@ -154,7 +172,9 @@ type QueueTask = {
   seq: number;
   attempt: number;
   maxAttempts: number;
-  route: "hosted";
+  route: ProviderRoute;
+  /** Set once a local attempt has failed: this task goes hosted from here. */
+  forceHosted?: boolean;
   /** Captured at enqueue time so queued work cannot lose the request-scoped
    * provider context when it is dispatched later. */
   byok?: ByokProviderConfig;
@@ -189,6 +209,7 @@ function settleTask(task: QueueTask, outcome: { ok: true; value: unknown } | { o
 /** One credential, one provider, one route. Kept as a function (rather than
  *  inlining "hosted") so telemetry and tests keep a single source of truth. */
 export function providerFallbackOrder(): Array<QueueTask["route"]> {
+  if (localLaneReady()) return ["local", "hosted"];
   return ["hosted"];
 }
 
@@ -394,14 +415,31 @@ async function pump(): Promise<void> {
       }
 
       const usingByok = Boolean(task.byok);
+      // A model on this machine has no shared quota to protect and no cost per
+      // request, so it takes neither a credential lease nor a slot of the
+      // hosted RPM budget. It is also the reason a deployment with NO hosted
+      // key at all is still a working install.
+      const usingLocal = !usingByok && !task.forceHosted && localLaneReady();
       let lease: KeyLease | null = null;
-      if (!usingByok) {
+      if (!usingByok && !usingLocal) {
         // One credential: there is nothing to choose between. Either the lane
         // can take the request now, or the task waits. The former pool version
         // scored keys by load, preferred a per-role key, and could fail over to
         // a second lane — none of which is reachable with a single key.
         if (keyLane.isEmpty()) {
-          settleTask(task, { ok: false, error: new Error("No AI provider is configured. Set TRION_API_KEY in .env.local and restart.") });
+          // Name the situation the operator is actually in. A local lane that
+          // is configured but cooling is a completely different problem from
+          // nothing being configured at all, and the old message reported both
+          // as the latter.
+          const local = localLaneFromEnv();
+          settleTask(task, {
+            ok: false,
+            error: new Error(
+              local
+                ? `The local model at ${local.baseUrl} is not answering, and no fallback is configured. Start it, or set TRION_API_KEY for the hosted fallback.`
+                : "No AI provider is configured. Set TRION_LOCAL_BASE_URL + TRION_LOCAL_MODEL for a local model, or TRION_API_KEY for the hosted one."
+            ),
+          });
           continue;
         }
         const waitMs = keyLane.waitMs(task.estTokens);
@@ -421,17 +459,18 @@ async function pump(): Promise<void> {
         lastDispatchAt = Date.now();
       }
       queue.splice(queue.indexOf(task), 1);
+      task.route = usingLocal ? "local" : "hosted";
       inFlight += 1;
-      if (!usingByok) hostedInFlight += 1;
+      if (!usingByok && !usingLocal) hostedInFlight += 1;
       // Something moved. A task blocked earlier in this pass may have been
       // waiting on budget that this dispatch is about to release, so give every
       // blocked task a fresh look rather than carrying a stale verdict forward.
       blocked.clear();
       blockedWakeAt = null;
 
-      void dispatch(task, lease, usingByok).finally(() => {
+      void dispatch(task, lease, usingByok, usingLocal).finally(() => {
         inFlight -= 1;
-        if (!usingByok) hostedInFlight -= 1;
+        if (!usingByok && !usingLocal) hostedInFlight -= 1;
         void pump();
       });
     }
@@ -442,7 +481,7 @@ async function pump(): Promise<void> {
 
 /** Run exactly one attempt. Success resolves the caller; a retryable failure
  *  re-queues the task with a delay instead of blocking this slot. */
-async function dispatch(task: QueueTask, lease: KeyLease | null, usingByok: boolean): Promise<void> {
+async function dispatch(task: QueueTask, lease: KeyLease | null, usingByok: boolean, usingLocal = false): Promise<void> {
   // The deadline or a user Stop can settle a task between selection and
   // dispatch. Spending a provider request on an already-settled call is pure
   // waste against the rate ceiling and its result has nowhere to go.
@@ -451,7 +490,10 @@ async function dispatch(task: QueueTask, lease: KeyLease | null, usingByok: bool
     return;
   }
   task.opts.onRoute?.(task.route);
-  const breaker = usingByok ? null : hostedCircuitBreaker;
+  // The hosted breaker describes the hosted endpoint. A model on localhost is
+  // not affected by it, and must not be withheld because the internet lane is
+  // briefly in trouble — that is exactly the moment local is most useful.
+  const breaker = usingByok || usingLocal ? null : hostedCircuitBreaker;
   if (breaker?.isOpen()) {
     if (lease) keyLane.settleFailure(lease);
     settleTask(task, { ok: false, error: new Error("Trion is briefly pausing requests after repeated upstream failures. Try again in a moment.") });
@@ -481,20 +523,86 @@ async function dispatch(task: QueueTask, lease: KeyLease | null, usingByok: bool
       : undefined,
   };
 
+  const local = usingLocal ? localLaneFromEnv() : null;
+  if (usingLocal && local && attemptOpts.timeoutMs && local.timeoutMs) {
+    attemptOpts.timeoutMs = Math.min(attemptOpts.timeoutMs, local.timeoutMs);
+  }
+
   try {
     const text = await callProviderText(task.messages, task.maxTokens, attemptOpts, lease?.secret, task.byok, (usage) => {
       // Correct this key's pessimistic pre-flight estimate with what it was
       // actually billed. Concurrent responses settle against their own lease.
       if (lease) keyLane.settleSuccess(lease, usage.promptTokens + usage.completionTokens);
-    }, (abort) => { task.abortInFlight = abort; });
+    }, (abort) => { task.abortInFlight = abort; }, local ?? undefined);
+    if (usingLocal) noteLocalSuccess();
     breaker?.breakSequence();
     settleTask(task, { ok: true, value: task.parse ? parseAgentTurn(text) : text });
   } catch (error) {
     if (task.settled) return;
+    if (usingLocal) {
+      await failLocal(task, error);
+      return;
+    }
     await settleFailure(task, error, lease, usingByok);
   } finally {
     task.abortInFlight = undefined;
   }
+}
+
+/**
+ * A local attempt failed. Move THIS call to the hosted lane.
+ *
+ * Not a retry: the user asked one question, and answering it on a different
+ * lane is not a second attempt at the same thing. `task.attempt` is deliberately
+ * untouched, so a local server that is down does not silently eat the retry
+ * budget the hosted lane is going to need. A user Stop and the call's absolute
+ * deadline both still apply, because `requeue` and the deadline timer are
+ * unchanged by which lane serves the work.
+ */
+async function failLocal(task: QueueTask, error: unknown): Promise<void> {
+  const { cooling } = noteLocalFailure(error);
+  const config = localLaneFromEnv();
+  logProviderError({
+    label: task.opts.label ?? "unlabelled",
+    route: "local",
+    endpoint: config?.baseUrl ?? "<unset>",
+    model: config?.model ?? "<unset>",
+    keyPresent: Boolean(config?.apiKey),
+    keyLength: config?.apiKey?.length ?? 0,
+    error,
+  });
+  perf("provider.localFailed", 0, {
+    label: task.opts.label ?? "",
+    cooling,
+    hostedAvailable: !keyLane.isEmpty(),
+  });
+
+  // A user Stop that landed during the local call must not be converted into a
+  // hosted request.
+  if (task.settled) return;
+
+  if (keyLane.isEmpty()) {
+    // Nothing to fall back to. Say what failed and where, not "no provider
+    // configured" — the operator configured one, and it is not answering.
+    settleTask(task, {
+      ok: false,
+      error: new Error(
+        `The local model at ${config?.baseUrl ?? "the configured address"} could not complete this request, and no hosted fallback is configured. Set TRION_API_KEY to fall back automatically.`
+      ),
+    });
+    return;
+  }
+
+  noteLocalFallback();
+  // Anything the failed local attempt already streamed is not part of the
+  // answer the hosted lane is about to write.
+  if (task.streamedAttempt !== undefined) {
+    task.opts.onStreamRestart?.();
+    task.streamedAttempt = undefined;
+  }
+  task.forceHosted = true;
+  task.route = "hosted";
+  requeue(task, "local lane unavailable");
 }
 
 /**
@@ -803,7 +911,10 @@ export function getRateSnapshot() {
 }
 
 export function hasConfig() {
-  return !keyLane.isEmpty();
+  // A local-only install is a configured install. Requiring a hosted key here
+  // would report a machine that can answer every request as having no provider
+  // at all, and the UI reads this to decide whether any model is selectable.
+  return !keyLane.isEmpty() || localLaneFromEnv() !== null;
 }
 
 async function callProviderText(
@@ -815,32 +926,49 @@ async function callProviderText(
   onSettle?: (usage: CompletionUsage) => void,
   /** Hands the caller a way to abort THIS request, so a wall-clock deadline or a
    *  user Stop can close the socket instead of waiting for the response. */
-  registerAbort?: (abort: () => void) => void
+  registerAbort?: (abort: () => void) => void,
+  /** Present when this attempt is being served by a model on the user's own
+   *  machine. It replaces the hosted endpoint, model and credential; BYOK still
+   *  outranks it, because a connection the user set up explicitly is a choice,
+   *  not a default. */
+  local?: LocalLaneConfig
 ): Promise<string> {
   const fast = opts.fast ?? false;
   const temperature = opts.temperature ?? 0.15;
   const tier = opts.tier ?? "trion-1.4";
   const model = byok
     ? (fast && byok.fastModel ? byok.fastModel : byok.model)
-    : providerModelForTier(tier, fast);
+    : local
+      ? (fast && local.fastModel ? local.fastModel : local.model)
+      : providerModelForTier(tier, fast);
   const baseUrl = (byok
     ? byok.baseUrl
-    : (process.env.TRION_BASE_URL || process.env.NIM_BASE_URL || "https://integrate.api.nvidia.com/v1"))?.replace(/\/$/, "");
-  const apiKey = byok ? byok.apiKey : providerKey;
+    : local
+      ? local.baseUrl
+      : (process.env.TRION_BASE_URL || process.env.NIM_BASE_URL || "https://integrate.api.nvidia.com/v1"))?.replace(/\/$/, "");
+  // A local server usually wants no credential at all. An empty string is a
+  // valid answer here, not a misconfiguration, so the "no usable route" check
+  // below treats a local target as already authorized.
+  const apiKey = byok ? byok.apiKey : local ? (local.apiKey ?? "") : providerKey;
 
-  if (!model || !baseUrl || !apiKey) {
+  if (!model || !baseUrl || (!apiKey && !local)) {
     // Name the MISSING piece. The old message said only "not configured",
     // which is what let an absent TRION_API_KEY look identical to a bad model
     // id for the entire life of this bug.
-    const missing = [
-      !apiKey ? "no API key (set TRION_API_KEY in .env.local)" : null,
-      !model ? "no model id (set TRION_MODEL_PRIMARY)" : null,
-      !baseUrl ? "no base URL (set TRION_BASE_URL)" : null,
-    ].filter(Boolean).join("; ");
+    const missing = local
+      ? [
+          !model ? "no local model id (set TRION_LOCAL_MODEL)" : null,
+          !baseUrl ? "no local base URL (set TRION_LOCAL_BASE_URL)" : null,
+        ].filter(Boolean).join("; ")
+      : [
+          !apiKey ? "no API key (set TRION_API_KEY in .env.local)" : null,
+          !model ? "no model id (set TRION_MODEL_PRIMARY)" : null,
+          !baseUrl ? "no base URL (set TRION_BASE_URL)" : null,
+        ].filter(Boolean).join("; ");
     const error = new Error(`Trion has no usable model route: ${missing}.`);
     logProviderError({
       label: opts.label ?? "unlabelled",
-      route: byok ? "byok" : "hosted",
+      route: byok ? "byok" : local ? "local" : "hosted",
       endpoint: baseUrl ?? "<unset>",
       model: model ?? "<unset>",
       keyPresent: Boolean(apiKey),
@@ -866,11 +994,11 @@ async function callProviderText(
   const endpoint = anthropic ? `${baseUrl}/messages` : `${baseUrl}/chat/completions`;
   const diag = {
     label: opts.label ?? "unlabelled",
-    route: byok ? "byok" : "hosted",
+    route: byok ? "byok" : local ? "local" : "hosted",
     endpoint,
     model,
     keyPresent: Boolean(apiKey),
-    keyLength: apiKey.length,
+    keyLength: apiKey?.length ?? 0,
   };
   logProviderRequest(diag);
 
@@ -881,9 +1009,14 @@ async function callProviderText(
       endpoint,
       {
       method: "POST",
+      // A keyless local server gets no Authorization header at all. Sending
+      // `Bearer ` with nothing after it is not the same as sending nothing, and
+      // some servers reject it outright.
       headers: anthropic
-          ? { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
-          : { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+          ? { "content-type": "application/json", "x-api-key": apiKey ?? "", "anthropic-version": "2023-06-01" }
+          : apiKey
+            ? { "content-type": "application/json", authorization: `Bearer ${apiKey}` }
+            : { "content-type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify(anthropic ? {
         model,
@@ -900,7 +1033,10 @@ async function callProviderText(
         // Only sent when the caller has an opinion. Omitting the key leaves the
         // provider's own default in place, which is what makes it possible to
         // measure a before/after against unmodified behaviour.
-        ...(!byok && typeof opts.thinking === "boolean"
+        // NVIDIA-specific. A local llama.cpp/Ollama/vLLM server rejects or
+        // ignores unknown body keys depending on the build, and an argument
+        // this lane cannot honour is not worth risking a 400 over.
+        ...(!byok && !local && typeof opts.thinking === "boolean"
           ? { chat_template_kwargs: { thinking: opts.thinking } }
           : {}),
         // Function-calling passthrough for the OpenAI-compatible route only.

@@ -6,7 +6,7 @@ import { queuedCompletion, queuedTextCompletion } from "@/lib/nim/internal-clien
 import { sanitize, sanitizeToolInput, assertNoLeaks, createStreamSanitizer } from "./sanitize";
 import { perf, estTokensOf } from "./perf";
 import { takeBudgetSlot, type TurnBudget } from "./turn-budget";
-import type { ProviderTool, ProviderToolChoice } from "@/lib/nim/internal-client";
+import type { ProviderRoute, ProviderTool, ProviderToolChoice } from "@/lib/nim/internal-client";
 import { STATIC_SYSTEM_PROMPTS } from "./static-prompts";
 import { recordUsage, type CallType } from "./token-ledger";
 
@@ -43,7 +43,7 @@ export interface ModelOptions {
   signal?: AbortSignal;
   /** Internal audit callback. The route is stripped before AgentOutput reaches
    * the browser, so provider identity never becomes user-facing content. */
-  onRoute?: (route: "hosted") => void;
+  onRoute?: (route: ProviderRoute) => void;
   /** Per-turn call budget. Counted at gateway entry, so every stage, retry,
    *  repair, and review chain draws from the same allowance. Absent means
    *  unenforced (bench/offline contexts). */
