@@ -1,0 +1,1028 @@
+/* ===========================================================================
+ * The chat shell.
+ *
+ * One layout, not two. The app used to render a dedicated "landing" screen —
+ * its own sidebar, its own composer, its own brand block — and then swap the
+ * whole tree for a different "workspace" screen on the first message. Two
+ * markup trees for one product meant the two drifted (the landing sidebar had
+ * no active state, the workspace had no suggestions), and the transition
+ * between them read as a page load rather than as a conversation starting.
+ *
+ * Here the shell is constant and the THREAD changes state: empty centres the
+ * composer under a greeting, non-empty docks it under the transcript. That is
+ * the shape both assistants this is measured against converged on, and it is
+ * one DOM.
+ *
+ * Every colour resolves through the tokens in globals.css, so light/dark keeps
+ * working with no rules of its own here beyond the two that genuinely differ.
+ * ======================================================================== */
+
+.nmShell {
+  display: flex;
+  height: 100dvh;
+  width: 100%;
+  overflow: hidden;
+  background: var(--canvas);
+  color: var(--primary);
+}
+
+/* --- Sidebar ------------------------------------------------------------ */
+
+.nmSidebar {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 264px;
+  width: 264px;
+  min-width: 0;
+  border-right: 1px solid var(--kraken-border);
+  background: var(--ocean-navy);
+  transition: margin-left 220ms var(--calm-ease);
+}
+
+.nmShell.collapsed .nmSidebar {
+  margin-left: -264px;
+}
+
+.nmSidebarHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 8px;
+}
+
+.nmBrand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 620;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  margin-right: auto;
+  color: var(--primary);
+}
+
+.nmIconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--secondary);
+  cursor: pointer;
+  transition: background 140ms var(--calm-ease), color 140ms var(--calm-ease);
+}
+
+.nmIconButton:hover {
+  background: var(--surface-variant);
+  color: var(--primary);
+}
+
+.nmIconButton:focus-visible,
+.nmNewChat:focus-visible,
+.nmNavItem:focus-visible,
+.nmThreadItem:focus-visible,
+.nmSuggestion:focus-visible,
+.nmSend:focus-visible,
+.nmComposerTool:focus-visible,
+.nmModelTrigger:focus-visible {
+  outline: 2px solid var(--kraken-purple);
+  outline-offset: 2px;
+}
+
+.nmNewChat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 12px 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--kraken-border);
+  border-radius: var(--radius-button);
+  background: var(--surface);
+  color: var(--primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 560;
+  cursor: pointer;
+  transition: background 140ms var(--calm-ease), border-color 140ms var(--calm-ease);
+}
+
+.nmNewChat:hover {
+  background: var(--surface-variant);
+  border-color: var(--kraken-silver-blue);
+}
+
+.nmSidebarScroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+
+.nmSideLabel {
+  margin: 10px 8px 6px;
+  font-size: 11px;
+  font-weight: 620;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-ink);
+}
+
+.nmThreadList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.nmThreadList li {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.nmThreadItem {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nmThreadItem:hover,
+.nmThreadList li:hover .nmThreadItem {
+  background: var(--surface-variant);
+}
+
+.nmThreadItem.active {
+  background: var(--surface-strong);
+  font-weight: 560;
+}
+
+.nmThreadDelete {
+  position: absolute;
+  right: 4px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted-ink);
+  cursor: pointer;
+}
+
+.nmThreadList li:hover .nmThreadDelete,
+.nmThreadDelete:focus-visible {
+  display: inline-flex;
+}
+
+.nmThreadDelete:hover {
+  background: var(--surface-strong);
+  color: var(--danger-strong);
+}
+
+.nmEmptyHistory {
+  margin: 4px 10px;
+  font-size: 13px;
+  color: var(--muted-ink);
+}
+
+.nmSidebarFoot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-top: 1px solid var(--kraken-border);
+}
+
+.nmNavItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--secondary);
+  font: inherit;
+  font-size: 13.5px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.nmNavItem:hover {
+  background: var(--surface-variant);
+  color: var(--primary);
+}
+
+.nmNavItem.active {
+  background: var(--surface-strong);
+  color: var(--primary);
+  font-weight: 560;
+}
+
+/* --- Main column -------------------------------------------------------- */
+
+.nmMain {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.nmTopBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 52px;
+  padding: 0 14px;
+  border-bottom: 1px solid transparent;
+  transition: border-color 160ms linear;
+}
+
+/* The rule only appears once there is something scrolled under it. */
+.nmTopBar.scrolled {
+  border-bottom-color: var(--kraken-border);
+}
+
+.nmTopTitle {
+  font-size: 14px;
+  font-weight: 560;
+  color: var(--primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nmTopActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.nmChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--kraken-border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--secondary);
+  font-size: 12.5px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.nmChip:hover {
+  color: var(--primary);
+}
+
+.nmDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--kraken-silver-blue);
+}
+
+.nmChip.live .nmDot { background: var(--kraken-green); }
+.nmChip.busy .nmDot { background: var(--kraken-purple); animation: nmPulse 1.4s ease-in-out infinite; }
+.nmChip.error .nmDot { background: var(--danger-strong); }
+
+@keyframes nmPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* --- Thread ------------------------------------------------------------- */
+
+.nmScroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable both-edges;
+}
+
+.nmColumn {
+  width: min(100%, 46rem);
+  margin: 0 auto;
+  padding: 24px 24px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* The empty state is the same column, vertically centred, with the composer
+   inside it rather than docked below. */
+.nmWelcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: min(100%, 46rem);
+  margin: 0 auto;
+  padding: 24px 24px 8vh;
+  gap: 18px;
+}
+
+.nmWelcomeHead {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.nmWelcomeHead h1 {
+  margin: 0;
+  font-size: clamp(24px, 3.4vw, 32px);
+  font-weight: 620;
+  letter-spacing: -0.02em;
+  color: var(--primary);
+}
+
+.nmWelcomeHead p {
+  margin: 0;
+  max-width: 34rem;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--secondary);
+}
+
+.nmSuggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.nmSuggestion {
+  padding: 8px 14px;
+  border: 1px solid var(--kraken-border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--secondary);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: background 140ms var(--calm-ease), color 140ms var(--calm-ease), border-color 140ms var(--calm-ease);
+}
+
+.nmSuggestion:hover {
+  background: var(--surface-variant);
+  border-color: var(--kraken-silver-blue);
+  color: var(--primary);
+}
+
+/* --- Messages ----------------------------------------------------------- */
+
+.nmTurn {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: nmRise 260ms var(--calm-ease) both;
+}
+
+@keyframes nmRise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.nmUser {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 10px 16px;
+  border-radius: 20px 20px 6px 20px;
+  background: var(--surface-strong);
+  color: var(--primary);
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.nmAssistant {
+  font-size: 15.5px;
+  line-height: 1.72;
+  color: var(--primary);
+  overflow-wrap: anywhere;
+}
+
+/* The caret only exists while text is still arriving. */
+.nmAssistant.streaming > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  background: var(--kraken-purple);
+  animation: nmBlink 1s steps(2, start) infinite;
+}
+
+@keyframes nmBlink {
+  to { visibility: hidden; }
+}
+
+.nmRowActions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 140ms linear;
+}
+
+.nmTurn:hover .nmRowActions,
+.nmRowActions:focus-within {
+  opacity: 1;
+}
+
+.nmRowAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.nmRowAction:hover {
+  background: var(--surface-variant);
+  color: var(--primary);
+}
+
+/* --- Working state ------------------------------------------------------ */
+
+.nmStatus {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13.5px;
+  color: var(--secondary);
+}
+
+.nmSpinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--surface-strong);
+  border-top-color: var(--kraken-purple);
+  animation: nmSpin 720ms linear infinite;
+}
+
+@keyframes nmSpin {
+  to { transform: rotate(1turn); }
+}
+
+.nmStatusDone,
+.nmStatusError {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: #fff;
+}
+
+.nmStatusDone { background: var(--kraken-green); }
+.nmStatusError { background: var(--danger-strong); }
+
+.nmUpdates {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--kraken-border);
+  color: var(--secondary);
+  font-size: 13.5px;
+}
+
+.nmTraceToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  padding: 6px 11px;
+  border: 1px solid var(--kraken-border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--secondary);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.nmTraceToggle:hover {
+  background: var(--surface-variant);
+  color: var(--primary);
+}
+
+.nmTracePanel {
+  border: 1px solid var(--kraken-border);
+  border-radius: var(--radius-card);
+  background: var(--ocean-navy);
+  padding: 12px 14px;
+}
+
+.nmNotice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--kraken-border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--primary);
+}
+
+.nmNotice.error {
+  border-color: rgb(var(--danger-rgb) / 0.4);
+  background: rgb(var(--danger-rgb) / 0.06);
+}
+
+.nmNotice span { flex: 1 1 18rem; }
+
+.nmNoticeAction {
+  padding: 7px 12px;
+  border: 1px solid var(--kraken-border);
+  border-radius: var(--radius-button);
+  background: var(--surface);
+  color: var(--primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 560;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.nmNoticeAction.primary {
+  background: var(--kraken-purple);
+  border-color: var(--kraken-purple);
+  color: #fff;
+}
+
+.nmNoticeAction:hover { filter: brightness(1.06); }
+
+/* --- Composer ----------------------------------------------------------- */
+
+.nmDock {
+  width: min(100%, 46rem);
+  margin: 0 auto;
+  padding: 8px 24px 16px;
+}
+
+.nmComposer {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--kraken-border);
+  border-radius: 24px;
+  background: var(--surface);
+  box-shadow: var(--micro-shadow);
+  transition: border-color 140ms var(--calm-ease), box-shadow 140ms var(--calm-ease);
+}
+
+.nmComposer:focus-within {
+  border-color: var(--kraken-purple);
+  box-shadow: 0 0 0 3px var(--kraken-purple-subtle);
+}
+
+.nmComposer textarea {
+  width: 100%;
+  min-height: 24px;
+  max-height: 40vh;
+  padding: 14px 18px 4px;
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  font-size: 15.5px;
+  line-height: 1.55;
+  resize: none;
+  outline: none;
+  overflow-y: auto;
+}
+
+.nmComposer textarea::placeholder {
+  color: var(--muted-ink);
+}
+
+.nmComposerRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 8px 10px;
+}
+
+.nmComposerTool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--secondary);
+  cursor: pointer;
+}
+
+.nmComposerTool:hover {
+  background: var(--surface-variant);
+  color: var(--primary);
+}
+
+.nmComposerSpacer { flex: 1; }
+
+.nmModelMenu { position: relative; }
+
+.nmModelTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--kraken-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--secondary);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.nmModelTrigger:hover {
+  background: var(--surface-variant);
+  color: var(--primary);
+}
+
+.nmModelPopover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  width: 270px;
+  display: none;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--kraken-border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--panel-shadow);
+}
+
+.nmModelPopover.open { display: flex; }
+
+.nmModelOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.nmModelOption:hover:not(:disabled) { background: var(--surface-variant); }
+.nmModelOption:disabled { opacity: 0.45; cursor: not-allowed; }
+.nmModelOption span { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.nmModelOption strong { font-size: 13.5px; font-weight: 560; }
+.nmModelOption small { font-size: 12px; color: var(--muted-ink); }
+
+.nmModelLink {
+  padding: 9px 10px;
+  border-top: 1px solid var(--kraken-border);
+  margin-top: 4px;
+  color: var(--kraken-purple);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.nmSend {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: var(--kraken-purple);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 140ms linear, transform 140ms var(--calm-ease);
+}
+
+.nmSend:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.nmSend:not(:disabled):hover { transform: translateY(-1px); }
+
+.nmSend.stop { background: var(--primary); color: var(--primary-foreground); }
+
+.nmStopSquare {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.nmComposerHint {
+  padding: 6px 6px 0;
+  font-size: 12px;
+  color: var(--muted-ink);
+  text-align: center;
+}
+
+.nmAttachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 14px 6px;
+}
+
+.nmAttachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--kraken-border);
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--secondary);
+}
+
+.nmAttachment button {
+  border: none;
+  background: transparent;
+  color: var(--muted-ink);
+  cursor: pointer;
+  display: inline-flex;
+}
+
+.nmQueued {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 8px;
+  font-size: 12.5px;
+  color: var(--muted-ink);
+}
+
+.nmQueuedChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 18rem;
+  padding: 4px 8px;
+  border: 1px solid var(--kraken-border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--secondary);
+}
+
+.nmQueuedChip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nmQueuedChip button {
+  border: none;
+  background: transparent;
+  color: var(--muted-ink);
+  cursor: pointer;
+  display: inline-flex;
+}
+
+/* --- The question/approval gate, in the composer ------------------------ */
+
+.nmGate {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--kraken-border);
+  border-radius: var(--radius-card);
+  background: var(--ocean-navy);
+}
+
+.nmGateHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 620;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted-ink);
+}
+
+.nmGateHead button {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--muted-ink);
+  font: inherit;
+  font-size: 12.5px;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.nmGateAsk {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 560;
+  color: var(--primary);
+}
+
+.nmGateWhy {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--secondary);
+}
+
+.nmGateSteps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13.5px;
+  color: var(--secondary);
+}
+
+.nmGateChoices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nmGateChoice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--kraken-border);
+  border-radius: var(--radius-button);
+  background: var(--surface);
+  color: var(--primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nmGateChoice:hover { background: var(--surface-variant); }
+
+.nmGateChoice.picked {
+  border-color: var(--kraken-purple);
+  box-shadow: 0 0 0 2px var(--kraken-purple-subtle);
+}
+
+.nmGateTick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  border: 1px solid var(--kraken-border);
+  border-radius: 5px;
+  color: #fff;
+}
+
+.nmGateChoice.picked .nmGateTick {
+  background: var(--kraken-purple);
+  border-color: var(--kraken-purple);
+}
+
+.nmGateChoiceBody { display: flex; flex-direction: column; gap: 2px; }
+.nmGateChoiceBody strong { font-size: 13.5px; font-weight: 560; }
+.nmGateChoiceBody small { font-size: 12.5px; color: var(--muted-ink); }
+
+.nmGateTag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--kraken-purple-subtle);
+  color: var(--kraken-purple);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 620;
+}
+
+.nmGateFoot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--muted-ink);
+}
+
+.nmGateSubmit {
+  margin-left: auto;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-button);
+  background: var(--kraken-purple);
+  color: #fff;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 560;
+  cursor: pointer;
+}
+
+.nmGateSubmit:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* --- Sidebar reveal + mobile -------------------------------------------- */
+
+.nmReveal {
+  position: absolute;
+  top: 9px;
+  left: 10px;
+  z-index: 30;
+}
+
+/* The scrim exists only where the sidebar floats over the content. On a
+ * desktop it is not merely invisible, it must not participate in the layout at
+ * all — as a plain flex child it rendered as a bar between the two panes. */
+.nmScrim {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .nmSidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 60;
+    box-shadow: var(--panel-shadow);
+  }
+
+  .nmShell:not(.collapsed) .nmScrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgb(var(--shadow-rgb) / 0.32);
+    border: none;
+  }
+
+  .nmColumn,
+  .nmWelcome,
+  .nmDock {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .nmUser { max-width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nmTurn,
+  .nmSpinner,
+  .nmChip.busy .nmDot,
+  .nmAssistant.streaming > :last-child::after {
+    animation: none;
+  }
+  .nmSidebar { transition: none; }
+}
