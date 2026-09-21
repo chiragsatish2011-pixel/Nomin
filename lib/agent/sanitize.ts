@@ -222,3 +222,37 @@ export function assertNoLeaksInOutput(output: {
     if (artifact.preview_url) assertNoLeaks(artifact.preview_url, `final AgentOutput.artifacts[${i}].preview_url`);
   });
 }
+
+/**
+ * A `sanitize` that can be applied to a stream without ever printing a banned
+ * word and taking it back.
+ *
+ * `sanitize` is safe on a whole string but NOT on an arbitrary slice of one: a
+ * chunk boundary can fall inside "Nemo|tron", and each half passes the filter
+ * cleanly while the concatenation on screen does not. The fix is to hold back
+ * the tail rather than to weaken the filter — every banned pattern is at most
+ * two whitespace-separated tokens ("NVIDIA NIM" is the longest), so retaining
+ * the last two tokens of the buffer guarantees that anything released has
+ * already been seen in its complete form.
+ *
+ * Returns a `push` for each chunk and a `flush` for the end of the stream.
+ */
+export function createStreamSanitizer(): { push: (chunk: string) => string; flush: () => string } {
+  let held = "";
+  return {
+    push(chunk: string): string {
+      held += chunk;
+      // Keep the last two tokens (and the whitespace between them) back.
+      const boundary = held.search(/\s\S*\s\S*$/);
+      if (boundary < 0) return "";
+      const release = held.slice(0, boundary);
+      held = held.slice(boundary);
+      return sanitize(release);
+    },
+    flush(): string {
+      const rest = held;
+      held = "";
+      return sanitize(rest);
+    },
+  };
+}

@@ -115,6 +115,27 @@ export type CompletionOptions = {
    *  Absent by default so existing calls are byte-identical. */
   tools?: ProviderTool[];
   toolChoice?: ProviderToolChoice;
+  /**
+   * Token sink. Present means "stream this call": the request is sent with
+   * `stream: true` and each content delta is handed over as it arrives.
+   *
+   * Every call in this codebase used to be a blocking request/response, so the
+   * user stared at a spinner for the WHOLE generation — 3s at best and 70s at
+   * the measured worst case on the primary tier — before a single character
+   * appeared. That is the difference between this product and the assistants it
+   * is compared to, and it is a transport property, not a model one.
+   *
+   * Only prose calls stream. A call whose result is parsed as JSON (a plan, an
+   * execution decision) gains nothing from partial text, so it stays on the
+   * blocking path where truncation and tool_calls are handled exactly as before.
+   */
+  onDelta?: (chunk: string) => void;
+  /**
+   * A retry discards whatever the failed attempt already streamed. Without this
+   * the client would append the second attempt's text to the first attempt's
+   * half-sentence. Fired before the first delta of any attempt after the first.
+   */
+  onStreamRestart?: () => void;
 };
 
 /** A single dispatch attempt. Retries re-enter the queue as a NEW attempt of the
@@ -139,6 +160,9 @@ type QueueTask = {
   byok?: ByokProviderConfig;
   /** Absolute time this call must be settled by, one way or the other. */
   expiresAt: number;
+  /** Which attempt has already streamed text to the caller, so a retry can
+   *  tell the caller to discard it. */
+  streamedAttempt?: number;
   /** Aborts the CURRENT in-flight attempt, if there is one. Re-pointed on each
    *  dispatch so a deadline or a user Stop reaches the live request. */
   abortInFlight?: () => void;
@@ -438,9 +462,23 @@ async function dispatch(task: QueueTask, lease: KeyLease | null, usingByok: bool
   // this, a 180s authoring attempt started near the deadline would keep the
   // socket open long after the caller had already been told the call failed.
   const remaining = task.expiresAt - Date.now();
+  const sink = task.opts.onDelta;
   const attemptOpts: CompletionOptions = {
     ...task.opts,
     timeoutMs: Math.max(1_000, Math.min(task.opts.timeoutMs ?? REQUEST_TIMEOUT_MS, remaining)),
+    // Attempt-aware, so a retry can never concatenate onto the text the failed
+    // attempt already delivered. The restart fires on the first delta of the
+    // new attempt rather than at dispatch, because an attempt that dies before
+    // producing any token has nothing to discard.
+    onDelta: sink
+      ? (chunk: string) => {
+          if (task.streamedAttempt !== task.attempt) {
+            if (task.streamedAttempt !== undefined) task.opts.onStreamRestart?.();
+            task.streamedAttempt = task.attempt;
+          }
+          sink(chunk);
+        }
+      : undefined,
   };
 
   try {
@@ -838,6 +876,7 @@ async function callProviderText(
 
   try {
     const system = messages.filter((entry) => entry.role === "system").map((entry) => entry.content).join("\n\n");
+    const streaming = typeof opts.onDelta === "function";
     const response = await fetch(
       endpoint,
       {
@@ -852,6 +891,7 @@ async function callProviderText(
         messages: messages.filter((entry) => entry.role !== "system").map((entry) => ({ role: entry.role, content: entry.content })),
         temperature,
         max_tokens: maxTokens,
+        ...(streaming ? { stream: true } : {}),
       } : {
         model,
         messages,
@@ -868,6 +908,10 @@ async function callProviderText(
         // bodies, and the Gemini/Anthropic branches above are untouched.
         ...(opts.tools ? { tools: opts.tools } : {}),
         ...(opts.toolChoice !== undefined ? { tool_choice: opts.toolChoice } : {}),
+        // `include_usage` keeps the token ledger honest on a streamed call:
+        // without it the final chunk carries no usage block and every streamed
+        // response would be recorded as costing zero tokens.
+        ...(streaming ? { stream: true, stream_options: { include_usage: true } } : {}),
       })
       }
     );
@@ -892,6 +936,25 @@ async function callProviderText(
     }
 
     logProviderResponse({ ...diag, status: response.status, ms: Date.now() - started });
+
+    if (streaming) {
+      const streamed = await consumeEventStream(response, anthropic, opts.onDelta!);
+      const usage: CompletionUsage = {
+        model,
+        promptTokens: streamed.promptTokens,
+        completionTokens: streamed.completionTokens,
+        cachedPromptTokens: streamed.cachedPromptTokens,
+        ms: Date.now() - started,
+      };
+      onSettle?.(usage);
+      opts.onUsage?.(usage);
+      if ((streamed.finishReason === "length" || streamed.finishReason === "MAX_TOKENS" || streamed.finishReason === "max_tokens") && !opts.allowTruncated) {
+        throw new Error("Trion response reached its output limit before the file was complete.");
+      }
+      const streamedContent = streamed.content || streamed.toolCallText;
+      if (!streamedContent) throw new Error("Trion returned an empty response.");
+      return streamedContent;
+    }
 
     const data = (await response.json()) as {
       choices?: Array<{
@@ -972,6 +1035,192 @@ async function callProviderText(
   }
 }
 
+type StreamedCompletion = {
+  content: string;
+  toolCallText: string;
+  finishReason?: string;
+  promptTokens: number;
+  completionTokens: number;
+  cachedPromptTokens: number;
+};
+
+/**
+ * Suppress reasoning that leaks into the visible channel.
+ *
+ * Prose calls are sent with thinking off, but a reasoning model can still open
+ * a `<think>` block on its own, and on a streamed call there is no post-hoc
+ * sanitize between the model and the user's screen — the tokens ARE the screen.
+ * This is a streaming-safe gate: it holds back a partial opening tag rather than
+ * printing "<thi" and then deleting it.
+ */
+function createThinkFilter() {
+  const OPEN = "<think>";
+  const CLOSE = "</think>";
+  let inside = false;
+  let pending = "";
+
+  /** Could `tail` be the start of `token`? Used to hold an incomplete tag. */
+  const partialOf = (tail: string, token: string) => {
+    const max = Math.min(tail.length, token.length - 1);
+    for (let take = max; take > 0; take--) {
+      if (token.startsWith(tail.slice(tail.length - take))) return take;
+    }
+    return 0;
+  };
+
+  return (chunk: string): string => {
+    pending += chunk;
+    let visible = "";
+    for (;;) {
+      if (!inside) {
+        const open = pending.indexOf(OPEN);
+        if (open >= 0) {
+          visible += pending.slice(0, open);
+          pending = pending.slice(open + OPEN.length);
+          inside = true;
+          continue;
+        }
+        const hold = partialOf(pending, OPEN);
+        visible += pending.slice(0, pending.length - hold);
+        pending = pending.slice(pending.length - hold);
+        return visible;
+      }
+      const close = pending.indexOf(CLOSE);
+      if (close >= 0) {
+        pending = pending.slice(close + CLOSE.length);
+        inside = false;
+        continue;
+      }
+      // Still inside the reasoning block: keep only enough tail to recognise a
+      // closing tag split across chunks.
+      pending = pending.slice(Math.max(0, pending.length - CLOSE.length));
+      return visible;
+    }
+  };
+}
+
+/**
+ * Consume a Server-Sent Events completion, handing each visible delta to the
+ * caller as it lands and returning the assembled text at the end.
+ *
+ * Handles both wire formats this client speaks: OpenAI-compatible
+ * (`choices[].delta`) and Anthropic (`content_block_delta`). A malformed or
+ * truncated `data:` line is skipped rather than failing the call — the stream is
+ * a best-effort transport for text that is also fully returned at the end.
+ */
+async function consumeEventStream(
+  response: Response,
+  anthropic: boolean,
+  onDelta: (chunk: string) => void
+): Promise<StreamedCompletion> {
+  const body = response.body;
+  if (!body) throw new Error("Trion returned an empty response.");
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const visible = createThinkFilter();
+  const toolArgs = new Map<number, { name: string; args: string }>();
+  const result: StreamedCompletion = {
+    content: "",
+    toolCallText: "",
+    promptTokens: 0,
+    completionTokens: 0,
+    cachedPromptTokens: 0,
+  };
+
+  let buffer = "";
+  const handleLine = (line: string) => {
+    if (!line.startsWith("data:")) return;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+    let event: Record<string, unknown>;
+    try {
+      event = JSON.parse(payload) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+
+    if (anthropic) {
+      const type = event.type as string | undefined;
+      if (type === "content_block_delta") {
+        const delta = event.delta as { type?: string; text?: string } | undefined;
+        if (delta?.type === "text_delta" && delta.text) {
+          result.content += delta.text;
+          const shown = visible(delta.text);
+          if (shown) onDelta(shown);
+        }
+        return;
+      }
+      if (type === "message_start") {
+        const usage = (event.message as { usage?: { input_tokens?: number; cache_read_input_tokens?: number } } | undefined)?.usage;
+        result.promptTokens = usage?.input_tokens ?? 0;
+        result.cachedPromptTokens = usage?.cache_read_input_tokens ?? 0;
+        return;
+      }
+      if (type === "message_delta") {
+        const usage = event.usage as { output_tokens?: number } | undefined;
+        if (usage?.output_tokens) result.completionTokens = usage.output_tokens;
+        const stop = (event.delta as { stop_reason?: string } | undefined)?.stop_reason;
+        if (stop) result.finishReason = stop;
+        return;
+      }
+      return;
+    }
+
+    const usage = event.usage as
+      | { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } }
+      | undefined;
+    if (usage) {
+      result.promptTokens = usage.prompt_tokens ?? result.promptTokens;
+      result.completionTokens = usage.completion_tokens ?? result.completionTokens;
+      result.cachedPromptTokens = usage.prompt_tokens_details?.cached_tokens ?? result.cachedPromptTokens;
+    }
+
+    const choice = (event.choices as Array<{
+      delta?: { content?: string | null; tool_calls?: Array<{ index?: number; function?: { name?: string; arguments?: string } }> };
+      finish_reason?: string | null;
+    }> | undefined)?.[0];
+    if (!choice) return;
+    if (choice.finish_reason) result.finishReason = choice.finish_reason;
+    const text = choice.delta?.content;
+    if (typeof text === "string" && text) {
+      result.content += text;
+      const shown = visible(text);
+      if (shown) onDelta(shown);
+    }
+    for (const call of choice.delta?.tool_calls ?? []) {
+      const index = call.index ?? 0;
+      const entry = toolArgs.get(index) ?? { name: "", args: "" };
+      if (call.function?.name) entry.name = call.function.name;
+      if (call.function?.arguments) entry.args += call.function.arguments;
+      toolArgs.set(index, entry);
+    }
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newline = buffer.indexOf("\n");
+      while (newline >= 0) {
+        handleLine(buffer.slice(0, newline).trim());
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf("\n");
+      }
+    }
+    if (buffer.trim()) handleLine(buffer.trim());
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (toolArgs.size > 0) {
+    result.toolCallText = JSON.stringify(
+      [...toolArgs.values()].map((entry) => ({ name: entry.name, arguments: entry.args })),
+    );
+  }
+  return result;
+}
+
 /** Read status, headers and body off a failed Response once, up front. */
 async function toApiError(response: Response, byok = false): Promise<ApiError> {
   const body = await response.text().catch(() => "");
@@ -1002,7 +1251,68 @@ function describeError(error: unknown): string {
   return "Trion request failed.";
 }
 
+/**
+ * A native function-calling reply, if that is what this is.
+ *
+ * When a response comes back as `tool_calls` rather than as content, this
+ * client serializes the calls as `[{name, arguments}]` so the text path has
+ * something to carry (see `toolCallText`). Nothing downstream understood that
+ * shape, so a provider that honoured `tools` — the reliable way to get a
+ * schema-correct tool call — produced an UNPARSEABLE decision, which is the
+ * opposite of what asking for tools is for.
+ *
+ * `arguments` is a JSON string by the OpenAI spec, so it is parsed separately
+ * from the envelope. A call naming a tool this agent does not have is not
+ * rescued into a `finish`; it falls through to the raw-output wrapper so the
+ * executor re-asks.
+ */
+function toolCallTurn(content: string): AgentTurn | null {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("[")) return null;
+  let calls: unknown;
+  try {
+    calls = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(calls) || calls.length === 0) return null;
+  const first = calls[0] as { name?: unknown; arguments?: unknown };
+  const name = typeof first?.name === "string" ? first.name.trim() : "";
+  if (!VALID_ACTIONS.has(name)) return null;
+
+  let args: unknown = first.arguments;
+  if (typeof args === "string") {
+    try {
+      args = JSON.parse(args || "{}");
+    } catch {
+      return null;
+    }
+  }
+  if (typeof args !== "object" || args === null || Array.isArray(args)) return null;
+
+  const input = args as Record<string, unknown>;
+  // The schema carries `thought` alongside the call's own fields; keep it out
+  // of the tool input so a tool never receives an argument it did not declare.
+  const { thought, ...toolInput } = input;
+  return {
+    thought: typeof thought === "string" ? thought : "",
+    action: name as AgentTurn["action"],
+    action_input: toolInput,
+    summary: typeof input.summary === "string" ? input.summary : undefined,
+    done: name === "finish",
+  };
+}
+
+/** Exported for tests only: the decision parser is the contract between the
+ *  provider's reply and the executor, and it is worth testing directly. */
+export function parseAgentTurnForTest(content: string): AgentTurn {
+  return parseAgentTurn(content);
+}
+
 function parseAgentTurn(content: string): AgentTurn {
+  const fromTool = toolCallTurn(content);
+  if (fromTool) return fromTool;
+
   let parsed: Partial<AgentTurn>;
 
   try {
@@ -1037,7 +1347,10 @@ function wrapRawModelOutput(content: string): AgentTurn {
     action: "finish",
     action_input: { raw_model_output: content },
     summary: content.slice(0, 900),
-    done: true
+    done: true,
+    // Carried, not swallowed. See AgentTurn.parse_error: a caller that can
+    // re-ask should re-ask rather than accept this as a finished turn.
+    parse_error: "The response was not a valid tool-call object.",
   };
 }
 

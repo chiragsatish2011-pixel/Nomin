@@ -22,7 +22,7 @@ type PlanStepState = PlanStep["state"];
 import { classifyIntent, isDefinitelyTask } from "../intent/classifier";
 import { generatePlanDoc, emitPlan, withStatedAssumption } from "../planner/generator";
 import { executeSteps } from "../executor/step-runner";
-import { pausedTaskSynthesis, planningFailureSynthesis, answerFailureSynthesis, synthesizeResult, synthesizeDirectAnswer, synthesizePlanOnly, budgetExceededSynthesis } from "../synthesis/generator";
+import { pausedTaskSynthesis, planningFailureSynthesis, answerFailureSynthesis, synthesizeResult, streamDirectAnswer, synthesizePlanOnly, budgetExceededSynthesis } from "../synthesis/generator";
 import { buildFinalOutput } from "../output/builder";
 import { normalizeInput } from "../input";
 import { getOrCreateSession, appendTurn, getPendingExecution, getSessionCount, getTaskState, hydrateHistoryIfEmpty, rehydratePendingExecution, serverUptimeS, setPendingExecution, setTaskState } from "../session-store";
@@ -407,7 +407,19 @@ async function runTurnInner(
       // six-turn transcript window is exactly the memory failure this replaces.
       let synthesis;
       try {
-        synthesis = await synthesizeDirectAnswer(conversationalInput, renderTaskState(taskState));
+        // Streamed. A conversational turn is the one place in this system where
+        // the model's output IS the product, with no parser between it and the
+        // user — so it is written to the screen as it is generated instead of
+        // after. `result` still follows with the complete text.
+        synthesis = await streamDirectAnswer(
+          conversationalInput,
+          renderTaskState(taskState),
+          {
+            onDelta: (text) => emit({ type: "delta", text }),
+            onReset: () => emit({ type: "delta", reset: true }),
+          },
+          signal,
+        );
       } catch (synthesisError) {
         // Cancellation must keep propagating to the outer handler — answering
         // a stopped turn deterministically would resurrect it as a result.

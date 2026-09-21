@@ -5,6 +5,7 @@
 import type { NormalInput, IntentDoc } from "../types";
 import { logSwallowedFailure } from "@/lib/nim/diagnostics";
 import { modelGateway } from "../model-gateway";
+import { perf } from "../perf";
 import { currentTurnSignal } from "../turn-control";
 import type { NimMessage } from "../types";
 import { toAgentStatus } from "../types";
@@ -278,8 +279,59 @@ function pendingClarification(input: NormalInput): string | null {
   return null;
 }
 
+/**
+ * Turns whose classification does not need a model.
+ *
+ * "hi", "thanks", "who are you", "what can you do" are the four most common
+ * things anyone types into a chat product, and every one of them was costing a
+ * full classification round trip — measured at 11.8s on the fast tier, in front
+ * of an answer the heuristics below already determine. The user watched a
+ * spinner for the length of a model call before the ANSWER call had even been
+ * enqueued.
+ *
+ * The bar for being here is strict: the message must match one of these closed
+ * classes, be short enough that it cannot also be carrying a request, and show
+ * no work signal and no ambiguity. Anything outside that still goes to the
+ * model. Nothing here changes what the intended answer is — the override chain
+ * in the model path reaches the same verdict for these inputs; it just reaches
+ * it one network round trip later.
+ *
+ * Suppressed entirely while a clarification is outstanding: a short reply then
+ * belongs to the paused task, not to a greeting.
+ */
+const FAST_PATH_MAX_CHARS = 64;
+
+export function decisiveIntent(input: NormalInput, awaitingAnswerTo: string | null): IntentDoc | null {
+  if (awaitingAnswerTo) return null;
+  const text = input.user_message.trim();
+  if (!text || text.length > FAST_PATH_MAX_CHARS) return null;
+  if (looksLikeWorkRequest(text) || isAmbiguous(text)) return null;
+
+  const closedClass =
+    GREETING_WORDS.test(text) ||
+    THANKS_WORDS.test(text) ||
+    IDENTITY_WORDS.test(text) ||
+    CAPABILITY_QUESTIONS.test(text);
+  if (!closedClass) return null;
+
+  return {
+    intent: "direct_answer",
+    activity: heuristicActivity(text, "direct_answer"),
+    reason: "Closed conversational class resolved without a model call.",
+  };
+}
+
 export async function classifyIntent(input: NormalInput): Promise<IntentDoc> {
   const awaitingAnswerTo = pendingClarification(input);
+
+  // One whole model round trip, skipped, on the turns where its answer is
+  // already known. See `decisiveIntent`.
+  const decisive = decisiveIntent(input, awaitingAnswerTo);
+  if (decisive) {
+    perf("step1.intentFastPath", 0, { intent: decisive.intent });
+    return decisive;
+  }
+
   const clarificationContext = !awaitingAnswerTo && canUseClarificationContext(input)
     ? clarificationContextFor(input)
     : null;

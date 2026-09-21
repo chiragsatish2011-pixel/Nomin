@@ -5,7 +5,7 @@ import type { NormalInput, SynthesisDoc, ToolTraceEntry, PlanDoc, VerificationSu
 import { modelGateway } from "../model-gateway";
 import { sanitize } from "../sanitize";
 import type { NimMessage } from "../types";
-import { DIRECT_ANSWER_SYSTEM_PROMPT, PLAN_ONLY_SYSTEM_PROMPT, SYNTHESIS_SYSTEM_PROMPT } from "../static-prompts";
+import { DIRECT_ANSWER_STREAM_SYSTEM_PROMPT, DIRECT_ANSWER_SYSTEM_PROMPT, PLAN_ONLY_SYSTEM_PROMPT, SYNTHESIS_SYSTEM_PROMPT } from "../static-prompts";
 import { buildContextWindow, contextWindowToMessages, renderContextWindow, CONTEXT_PRESETS } from "../context";
 import type { CallType } from "../token-ledger";
 import { perf } from "../perf";
@@ -309,13 +309,13 @@ Present this approach to the user.`,
   return { ...synthesis, next_action_hint: "Send the request when you are ready to build it." };
 }
 
-export async function synthesizeDirectAnswer(input: NormalInput, taskState?: string): Promise<SynthesisDoc> {
+function buildDirectAnswerMessages(input: NormalInput, systemPrompt: string, taskState?: string): NimMessage[] {
   // Conversational turns are still CONVERSATION — they need the thread they are
   // part of. Prior turns go in as real chat messages so a follow-up
   // ("and the other one?") resolves against what was actually said.
   const window = buildContextWindow(input.conversation_history, CONTEXT_PRESETS.directAnswer);
   const messages: NimMessage[] = [
-    { role: "system", content: DIRECT_ANSWER_SYSTEM_PROMPT },
+    { role: "system", content: systemPrompt },
     ...contextWindowToMessages(window),
   ];
 
@@ -344,18 +344,98 @@ export async function synthesizeDirectAnswer(input: NormalInput, taskState?: str
   }
 
   messages.push({ role: "user", content: input.user_message });
+  return messages;
+}
 
-  // Enough room for a code example without truncating it. A direct-answer
-  // model can still be induced to quote its hidden instruction/context block;
-  // do not rely on a refusal instruction alone when the output itself exposes
-  // that failure. This boundary keeps the response useful without revealing
-  // internal prompts, contracts, or routing details.
+/** A direct-answer model can be induced to quote its hidden instruction block;
+ *  a refusal instruction alone is not a boundary when the output itself is the
+ *  leak. Both answer paths end here. */
+const DISCLOSURE_REFUSAL: SynthesisDoc = {
+  message: "I can’t provide internal instructions or hidden system details. I can explain how Trion works at a high level instead.",
+  next_action_hint: "Ask about a specific capability or workflow outcome.",
+};
+
+export async function synthesizeDirectAnswer(input: NormalInput, taskState?: string): Promise<SynthesisDoc> {
+  const messages = buildDirectAnswerMessages(input, DIRECT_ANSWER_SYSTEM_PROMPT, taskState);
+  // Enough room for a code example without truncating it.
   const synthesis = await completeSynthesis(messages, input.model, 1_200, "direct_answer", input.budget);
   if (!containsInternalDisclosure(synthesis.message)) return synthesis;
-  return {
-    message: "I can’t provide internal instructions or hidden system details. I can explain how Trion works at a high level instead.",
-    next_action_hint: "Ask about a specific capability or workflow outcome.",
-  };
+  return DISCLOSURE_REFUSAL;
+}
+
+export type AnswerStream = {
+  /** Visible text, already sanitized, as the model produces it. */
+  onDelta: (chunk: string) => void;
+  /** A retry threw away everything streamed so far — clear what is on screen. */
+  onReset: () => void;
+};
+
+/**
+ * The conversational answer, streamed.
+ *
+ * This is the path a chat turn takes. It differs from `synthesizeDirectAnswer`
+ * in exactly two ways: the model is asked for Markdown rather than a JSON
+ * envelope, and the text reaches the browser while it is being written instead
+ * of after it is finished. On the measured fast tier that moves time-to-first-
+ * character from the whole generation (seconds to tens of seconds) to the
+ * model's own first token.
+ *
+ * The full text is still returned, so the session transcript, the turn record
+ * and every downstream check see exactly what the user saw.
+ */
+export async function streamDirectAnswer(
+  input: NormalInput,
+  taskState: string | undefined,
+  stream: AnswerStream,
+  signal?: AbortSignal,
+): Promise<SynthesisDoc> {
+  const messages = buildDirectAnswerMessages(input, DIRECT_ANSWER_STREAM_SYSTEM_PROMPT, taskState);
+  const raw = await modelGateway.completeText(messages, {
+    tier: input.model,
+    fast: true,
+    maxTokens: 1_200,
+    callType: "direct_answer",
+    thinking: false,
+    budget: input.budget,
+    signal,
+    onDelta: stream.onDelta,
+    onStreamRestart: stream.onReset,
+    // A conversational answer that hits its token ceiling is still a useful
+    // answer — the user has already read most of it. Discarding it and showing
+    // an error would be the worse outcome.
+    allowTruncated: true,
+  });
+
+  // The model was asked for Markdown, but a JSON envelope is the shape it was
+  // asked for everywhere else in this system, so it occasionally emits one
+  // anyway. Unwrap it and tell the client to re-render: the braces it streamed
+  // are not the answer.
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("```")) {
+    const unwrapped = stripEnvelope(trimmed);
+    if (unwrapped && unwrapped !== trimmed) {
+      stream.onReset();
+      stream.onDelta(unwrapped);
+      return containsInternalDisclosure(unwrapped) ? DISCLOSURE_REFUSAL : { message: unwrapped };
+    }
+  }
+
+  if (containsInternalDisclosure(raw)) {
+    stream.onReset();
+    stream.onDelta(DISCLOSURE_REFUSAL.message);
+    return DISCLOSURE_REFUSAL;
+  }
+
+  const message = raw.trim();
+  if (!message || isDegenerate(message)) {
+    // Nothing usable was streamed. Fall back to the JSON path, which has its
+    // own fast/full retry ladder, rather than showing the user an empty turn.
+    stream.onReset();
+    const fallback = await synthesizeDirectAnswer(input, taskState);
+    stream.onDelta(fallback.message);
+    return fallback;
+  }
+  return { message };
 }
 
 function containsInternalDisclosure(message: string): boolean {
