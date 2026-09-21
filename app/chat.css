@@ -1026,3 +1026,386 @@
   }
   .nmSidebar { transition: none; }
 }
+
+/* ===========================================================================
+ * The working indicator and the execution tree.
+ * ======================================================================== */
+
+/* --- Thinking mark ------------------------------------------------------ */
+
+.nmThinkMark {
+  display: block;
+  color: var(--kraken-purple);
+  flex: none;
+}
+
+.nmThinkArcOuter {
+  transform-origin: 50% 50%;
+  animation: nmSweep 1.5s linear infinite;
+}
+
+.nmThinkArcInner {
+  transform-origin: 50% 50%;
+  animation: nmSweepBack 2.3s linear infinite;
+}
+
+.nmThinkCore {
+  transform-origin: 50% 50%;
+  animation: nmBreathe 1.5s ease-in-out infinite;
+}
+
+@keyframes nmSweep {
+  to { transform: rotate(1turn); }
+}
+
+@keyframes nmSweepBack {
+  to { transform: rotate(-1turn); }
+}
+
+@keyframes nmBreathe {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.62); opacity: 0.55; }
+}
+
+/* --- The thinking tag --------------------------------------------------- */
+
+.nmThinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+  color: var(--secondary);
+}
+
+/* The label shimmers while work is in flight — the same "this is generating"
+   signal the text itself gives once it starts arriving. */
+.nmThinkingLabel {
+  background: linear-gradient(
+    100deg,
+    var(--muted-ink) 0%,
+    var(--primary) 20%,
+    var(--muted-ink) 40%
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: nmShimmer 2.4s linear infinite;
+}
+
+@keyframes nmShimmer {
+  to { background-position: -300% 0; }
+}
+
+.nmThinkingElapsed {
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+  color: var(--muted-ink);
+}
+
+/* --- Execution tree ----------------------------------------------------- */
+
+.nmTree {
+  display: flex;
+  flex-direction: column;
+  margin: 2px 0;
+}
+
+/* Every node is [spine+bead] [body]. The spine is a single element drawn
+   BEHIND the bead and running the full height of the row, so consecutive rows
+   produce one unbroken line without any per-row length arithmetic. */
+.nmNode {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  column-gap: 10px;
+  padding-bottom: 14px;
+}
+
+.nmNode.last { padding-bottom: 0; }
+
+.nmSpine {
+  position: absolute;
+  left: 10px;
+  top: 4px;
+  bottom: -4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--kraken-border);
+}
+
+.nmNode.last > .nmSpine { display: none; }
+
+/* The "downfall": while a node is running, its spine below it carries a pulse
+   travelling downward, so the eye is pulled to where the work is going next
+   rather than to a static line. */
+.nmSpine.flowing {
+  background-image: linear-gradient(
+    to bottom,
+    var(--kraken-purple) 0%,
+    var(--kraken-purple) 18%,
+    transparent 46%
+  );
+  background-repeat: no-repeat;
+  background-size: 100% 220%;
+  animation: nmFall 1.5s linear infinite;
+}
+
+@keyframes nmFall {
+  from { background-position: 0 -120%; }
+  to { background-position: 0 120%; }
+}
+
+.nmBead {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--canvas);
+  color: #fff;
+}
+
+.nmBead.pending {
+  border: 2px solid var(--kraken-border);
+  background: var(--canvas);
+}
+
+.nmBead.done {
+  background: var(--kraken-green);
+}
+
+.nmBead.error {
+  background: var(--danger-strong);
+}
+
+.nmBead.cancelled {
+  background: var(--kraken-silver-blue);
+}
+
+.nmBead.running {
+  background: var(--canvas);
+  box-shadow: 0 0 0 4px var(--kraken-purple-subtle);
+}
+
+.nmNodeBody {
+  min-width: 0;
+  padding-top: 1px;
+}
+
+.nmNodeLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 560;
+  line-height: 1.45;
+  color: var(--primary);
+  text-align: left;
+}
+
+.nmNodeLabel.button {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-weight: 560;
+  color: inherit;
+  cursor: pointer;
+}
+
+.nmNodeLabel.button:hover .nmNodeText { color: var(--kraken-purple); }
+
+.nmNodeLabel.button:focus-visible {
+  outline: 2px solid var(--kraken-purple);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.nmNodeText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nmNode.pending .nmNodeText { color: var(--muted-ink); font-weight: 460; }
+
+.nmNodeStatus {
+  margin-left: auto;
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 560;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted-ink);
+}
+
+.nmNode.running .nmNodeStatus { color: var(--kraken-purple); }
+.nmNode.error .nmNodeStatus { color: var(--danger-strong); }
+
+.nmNodeMeta {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 460;
+  color: var(--muted-ink);
+}
+
+.nmNodeDetail {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--secondary);
+}
+
+.nmNodeChevron {
+  flex: none;
+  color: var(--muted-ink);
+  transition: transform 160ms var(--calm-ease);
+}
+
+.nmNodeChevron.open { transform: rotate(90deg); }
+
+/* --- Branches (tool calls under a step) --------------------------------- */
+
+.nmBranch {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+  animation: nmBranchIn 200ms var(--calm-ease) both;
+}
+
+@keyframes nmBranchIn {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Each leaf hangs off the parent's spine with an elbow, the way a file tree
+   does — the relationship is drawn, not implied by indentation alone. */
+.nmLeaf {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  column-gap: 8px;
+  padding: 0 0 8px 2px;
+}
+
+.nmLeaf.last { padding-bottom: 2px; }
+
+.nmLeafElbow {
+  position: absolute;
+  left: 0;
+  top: -8px;
+  width: 11px;
+  height: 17px;
+  border-left: 2px solid var(--kraken-border);
+  border-bottom: 2px solid var(--kraken-border);
+  border-bottom-left-radius: 7px;
+}
+
+.nmLeaf:not(.last) .nmLeafElbow {
+  height: calc(100% + 8px);
+  border-bottom: none;
+  border-bottom-left-radius: 0;
+}
+
+/* The elbow of a non-last leaf still needs its own corner. */
+.nmLeaf:not(.last)::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -8px;
+  width: 11px;
+  height: 17px;
+  border-left: 2px solid transparent;
+  border-bottom: 2px solid var(--kraken-border);
+  border-bottom-left-radius: 7px;
+}
+
+.nmLeafDot {
+  position: relative;
+  z-index: 1;
+  align-self: start;
+  justify-self: center;
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--kraken-silver-blue);
+}
+
+.nmLeafDot.running {
+  background: var(--kraken-purple);
+  animation: nmPulse 1.2s ease-in-out infinite;
+}
+
+.nmLeafDot.done { background: var(--kraken-green); }
+.nmLeafDot.error { background: var(--danger-strong); }
+
+.nmLeafBody { min-width: 0; }
+
+.nmLeafLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--secondary);
+}
+
+.nmLeafLabel svg { flex: none; color: var(--muted-ink); }
+
+.nmLeafLabel code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--primary);
+}
+
+.nmLeafLabel em {
+  flex: none;
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--muted-ink);
+}
+
+.nmLeaf.error .nmLeafLabel { color: var(--danger-strong); }
+
+.nmLeafResult {
+  margin: 5px 0 0;
+  padding: 8px 10px;
+  max-height: 11rem;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--surface-variant);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nmThinkArcOuter,
+  .nmThinkArcInner,
+  .nmThinkCore,
+  .nmSpine.flowing,
+  .nmLeafDot.running,
+  .nmThinkingLabel,
+  .nmBranch {
+    animation: none;
+  }
+  /* Without the sweep the arcs must still read as a ring, not as two gaps. */
+  .nmThinkArcOuter { stroke-dasharray: none; opacity: 0.35; }
+  .nmThinkArcInner { stroke-dasharray: none; }
+  .nmThinkingLabel { color: var(--primary); }
+}

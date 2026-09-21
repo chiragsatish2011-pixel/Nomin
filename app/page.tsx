@@ -20,8 +20,8 @@ import {
   Sparkles,
   X
 } from "lucide-react";
-import { JellyfishMark } from "@/app/components/JellyfishMark";
-import { LandingJellyfish } from "@/app/components/LandingJellyfish";
+import { NominMark } from "@/app/components/NominMark";
+import { ThinkingMark } from "@/app/components/ThinkingMark";
 import { readConnection, safeConnectionLabel, type ByokConfig } from "@/app/lib/byok-client";
 import { Markdown } from "@/app/components/Markdown";
 import { ThemeToggle } from "@/app/components/ThemeToggle";
@@ -635,6 +635,9 @@ export default function Home() {
   const [streamingText, setStreamingText] = useState("");
   /** Which assistant row's copy button was just pressed. */
   const [copiedTurn, setCopiedTurn] = useState<number | null>(null);
+  /** Seconds the current turn has been working. A long wait with no number on
+   *  it reads as a hang; the same wait with a running count reads as work. */
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   /** The top bar grows a rule only once something is scrolled under it. */
   const [topBarScrolled, setTopBarScrolled] = useState(false);
   const turnSeqRef = useRef(0);
@@ -827,6 +830,20 @@ export default function Home() {
     stickToBottomRef.current = distanceFromBottom < 120;
     setTopBarScrolled(scroller.scrollTop > 4);
   }
+
+  // The turn clock. Started by `busy`, stopped by it, and reset between turns
+  // so a new turn never inherits the previous one's count.
+  useEffect(() => {
+    if (!busy) return;
+    const startedAt = Date.now();
+    const tick = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1_000);
+    return () => {
+      window.clearInterval(tick);
+      setElapsedSeconds(0);
+    };
+  }, [busy]);
 
   function collapseSidebar(collapsed: boolean) {
     setSidebarPreference(collapsed);
@@ -1443,10 +1460,16 @@ export default function Home() {
     }
 
     if (event.type === "plan") {
-      setPhase(`Plan: ${event.plan.summary}`);
+      // A plan with no summary is a server bug, but rendering the words
+      // "Plan — undefined" into the user's conversation is ours. Fall back to
+      // the step count, which the plan always has.
+      const planSummary = typeof event.plan.summary === "string" && event.plan.summary.trim()
+        ? event.plan.summary.trim()
+        : `${event.plan.steps.length} ${event.plan.steps.length === 1 ? "step" : "steps"}`;
+      setPhase(`Plan: ${planSummary}`);
       setAgentState("working");
       updateNode("intent", { status: "done" });
-      addNode({ id: "plan-root", kind: "plan", label: `Plan — ${event.plan.summary}`, status: "done", parentId: null });
+      addNode({ id: "plan-root", kind: "plan", label: `Plan — ${planSummary}`, status: "done", parentId: null });
       event.plan.steps.forEach((step, index) => {
         addNode({
           id: `step-${step.step_id}`,
@@ -1683,6 +1706,15 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
   const committedAnswer = turns.find((turn) => turn.id === currentTurnSeq && turn.role === "assistant")?.content;
   const liveAnswer = streamingText || committedAnswer || chatReply?.content || "";
 
+  // Held back for the first two seconds: a counter that flashes "1s" on every
+  // quick turn is noise, and the number only means anything once a wait is
+  // long enough to wonder about.
+  const elapsedLabel = elapsedSeconds < 2
+    ? null
+    : elapsedSeconds < 60
+      ? `${elapsedSeconds}s`
+      : `${Math.floor(elapsedSeconds / 60)}m ${elapsedSeconds % 60}s`;
+
   const currentThreadTitle = sessions.find((entry) => entry.id === sessionId)?.title
     ?? (turns.find((turn) => turn.role === "user")?.content ?? "New chat");
 
@@ -1904,7 +1936,7 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
       {allowanceExhausted ? (
         <section className="allowanceModal" role="dialog" aria-modal="true" aria-labelledby="allowance-title">
           <div className="allowanceCard">
-            <JellyfishMark size={48} title="Nomin" />
+            <NominMark size={44} title="Nomin" />
             <p>Building paused</p>
             <h2 id="allowance-title">You’ve reached your included building allowance.</h2>
             <span>It will become available again when your connected plan resets. If you do not want to wait, connect your own model and continue this saved build from the next unfinished step.</span>
@@ -1921,7 +1953,7 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
           the landing copy ended up without an active-conversation state. */}
       <aside className="nmSidebar" aria-label="Conversations">
         <div className="nmSidebarHead">
-          <span className="nmBrand"><JellyfishMark size={26} title="Nomin" /><span className="nominWordmark">Nomin</span></span>
+          <span className="nmBrand"><NominMark size={26} title="Nomin" /><span className="nominWordmark">Nomin</span></span>
           <button className="nmIconButton" type="button" onClick={() => collapseSidebar(true)} title="Close sidebar" aria-label="Close sidebar">
             <PanelLeftClose size={17} />
           </button>
@@ -2064,15 +2096,20 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
               {submittedMessage ? (
                 <section className="nmTurn" aria-live="polite">
                   {showAgentStatus ? (
-                    <div className="nmStatus">
+                    <div className="nmThinking" role="status">
                       {agentState === "complete" ? (
                         <span className="nmStatusDone"><Check size={11} /></span>
                       ) : agentState === "error" ? (
                         <span className="nmStatusError"><X size={11} /></span>
                       ) : (
-                        <span className="nmSpinner" aria-hidden="true" />
+                        <ThinkingMark size={17} />
                       )}
-                      <span>{phase}</span>
+                      {/* The label shimmers only while work is in flight; a
+                          finished or failed turn states its outcome plainly. */}
+                      <span className={agentState === "working" ? "nmThinkingLabel" : undefined}>{phase}</span>
+                      {agentState === "working" && elapsedLabel ? (
+                        <span className="nmThinkingElapsed">{elapsedLabel}</span>
+                      ) : null}
                     </div>
                   ) : null}
 
@@ -2093,12 +2130,16 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
                           <ChevronDown size={13} />
                         </button>
                       ) : (
-                        <div className="nmTracePanel">
+                        <>
+                          {/* No panel around it. The tree IS the content: a
+                              border here made the execution look like an
+                              embedded widget rather than part of the turn. */}
                           <TraceTree nodes={traceNodes} />
-                          <button className="nmTraceToggle" type="button" style={{ marginTop: 10 }} onClick={() => setTraceCollapsed(true)}>
-                            Hide steps
+                          <button className="nmTraceToggle" type="button" style={{ marginTop: 12 }} onClick={() => setTraceCollapsed(true)}>
+                            <ChevronDown size={13} style={{ transform: "rotate(180deg)" }} />
+                            <span>Hide steps</span>
                           </button>
-                        </div>
+                        </>
                       )}
                     </div>
                   ) : null}
@@ -2156,7 +2197,7 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
              down rather than replacing the screen. */
           <div className="nmWelcome">
             <div className="nmWelcomeHead">
-              <LandingJellyfish size={88} title="Nomin" />
+              <NominMark size={56} title="Nomin" />
               <h1>What are you building?</h1>
               <p>Describe the outcome. Nomin plans it, builds it in a sandbox in this tab, and shows you what runs.</p>
             </div>

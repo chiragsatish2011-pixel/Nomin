@@ -4,7 +4,7 @@ import { FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
 import { Check, KeyRound, MessageSquareText, PanelLeftClose, PanelLeftOpen, Plug, Search, Unplug } from "lucide-react";
 import { AccountMenu } from "@/app/components/AccountMenu";
-import { JellyfishMark } from "@/app/components/JellyfishMark";
+import { NominMark } from "@/app/components/NominMark";
 import { ThemeToggle } from "@/app/components/ThemeToggle";
 import { clearConnection, readConnection, safeConnectionLabel, saveConnection, type ByokConfig, type ConnectionProvider } from "@/app/lib/byok-client";
 
@@ -64,7 +64,7 @@ function ConnectionsPageContent() {
 
   return <main className={`connectionsShell${sidebarOpen ? "" : " sidebarClosed"}`}>
     <aside className="capacitySidebar connectionsSidebar">
-      <div className="capacitySidebarHead"><Link className="capacityBrand" href="/"><JellyfishMark size={38} title="Nomin" /><strong className="nominWordmark">Nomin</strong></Link><button type="button" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar"><PanelLeftClose size={17} /></button></div>
+      <div className="capacitySidebarHead"><Link className="capacityBrand" href="/"><NominMark size={30} title="Nomin" /><strong className="nominWordmark">Nomin</strong></Link><button type="button" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar"><PanelLeftClose size={17} /></button></div>
       <nav className="capacityNav"><Link href="/"><MessageSquareText size={17} />Workspace</Link><Link className="active" href="/connections"><Plug size={17} />Connections</Link></nav>
     </aside>
     {!sidebarOpen ? <button className="capacitySidebarReveal" type="button" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar"><PanelLeftOpen size={18} /></button> : null}
