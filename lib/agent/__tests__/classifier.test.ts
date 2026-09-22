@@ -199,11 +199,42 @@ describe("classifyIntent - comprehensive classification tests", () => {
     });
   });
 
+  // --- DETERMINISTIC FAST PATH (no model call at all) ---
+  describe("closed conversational classes skip the classification call", () => {
+    it.each([
+      ["hi"],
+      ["hello there"],
+      ["thanks!"],
+      ["who are you"],
+      ["what can you do"],
+    ])("answers %s without asking the model", async (message) => {
+      (modelGateway.completeText as vi.Mock).mockRejectedValue(new Error("the model must not be called"));
+      const result = await classifyIntent(createMockInput(message));
+      expect(result.intent).toBe("direct_answer");
+      expect(modelGateway.completeText).not.toHaveBeenCalled();
+    });
+
+    it("still asks the model when a greeting carries a real request", async () => {
+      mockClassifierResponse("task", "coding", "work");
+      const result = await classifyIntent(createMockInput("hi, can you create a login page for me"));
+      expect(result.intent).toBe("task");
+      expect(modelGateway.completeText).toHaveBeenCalled();
+    });
+
+    it("still asks the model for anything outside the closed classes", async () => {
+      mockClassifierResponse("direct_answer", "explaining", "question");
+      await classifyIntent(createMockInput("why is my vite build slow"));
+      expect(modelGateway.completeText).toHaveBeenCalled();
+    });
+  });
+
   // --- FALLBACK HEURISTIC TESTS (when model fails) ---
   describe("fallback heuristic when model response is invalid", () => {
-    it("falls back to direct_answer for 'hi' when model returns garbage", async () => {
+    it("falls back to direct_answer for an answerable question when model returns garbage", async () => {
+      // NOT "hi": a bare greeting never reaches the model at all now (see the
+      // fast-path tests below), so it cannot exercise the fallback.
       (modelGateway.completeText as vi.Mock).mockResolvedValue("not json at all");
-      const result = await classifyIntent(createMockInput("hi"));
+      const result = await classifyIntent(createMockInput("explain closures in javascript"));
       expect(result.intent).toBe("direct_answer");
       expect(result.reason).toBe("Fallback heuristic");
     });

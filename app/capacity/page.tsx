@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Gauge, MessageSquareText, PanelLeftClose, PanelLeftOpen, Plug } from "lucide-react";
-import { JellyfishMark } from "@/app/components/JellyfishMark";
+import { NominMark } from "@/app/components/NominMark";
 import { ThemeToggle } from "@/app/components/ThemeToggle";
 import { AccountMenu } from "@/app/components/AccountMenu";
 import { measureStorage, STORAGE_MONITOR_INTERVAL_MS, storageHealthDetail, storageHealthLabel, type StorageHealth } from "@/app/lib/storage-hygiene";
@@ -60,7 +60,7 @@ function CapacityPageContent() {
     <main className={`capacityShell${sidebarOpen ? "" : " sidebarClosed"}`}>
       <aside className="capacitySidebar" aria-label="Nomin navigation">
         <div className="capacitySidebarHead">
-          <Link className="capacityBrand" href="/"><JellyfishMark size={38} title="Nomin" /><strong className="nominWordmark">Nomin</strong></Link>
+          <Link className="capacityBrand" href="/"><NominMark size={30} title="Nomin" /><strong className="nominWordmark">Nomin</strong></Link>
           <button type="button" onClick={() => setSidebar(false)} aria-label="Close sidebar" title="Close sidebar"><PanelLeftClose size={17} /></button>
         </div>
         <nav className="capacityNav">

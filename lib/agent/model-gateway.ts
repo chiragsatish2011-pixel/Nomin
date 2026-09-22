@@ -3,10 +3,10 @@
 
 import type { AgentTurn, NimMessage, TrionTier } from "./types";
 import { queuedCompletion, queuedTextCompletion } from "@/lib/nim/internal-client";
-import { sanitize, sanitizeToolInput, assertNoLeaks } from "./sanitize";
+import { sanitize, sanitizeToolInput, assertNoLeaks, createStreamSanitizer } from "./sanitize";
 import { perf, estTokensOf } from "./perf";
 import { takeBudgetSlot, type TurnBudget } from "./turn-budget";
-import type { ProviderTool, ProviderToolChoice } from "@/lib/nim/internal-client";
+import type { ProviderRoute, ProviderTool, ProviderToolChoice } from "@/lib/nim/internal-client";
 import { STATIC_SYSTEM_PROMPTS } from "./static-prompts";
 import { recordUsage, type CallType } from "./token-ledger";
 
@@ -43,7 +43,7 @@ export interface ModelOptions {
   signal?: AbortSignal;
   /** Internal audit callback. The route is stripped before AgentOutput reaches
    * the browser, so provider identity never becomes user-facing content. */
-  onRoute?: (route: "hosted") => void;
+  onRoute?: (route: ProviderRoute) => void;
   /** Per-turn call budget. Counted at gateway entry, so every stage, retry,
    *  repair, and review chain draws from the same allowance. Absent means
    *  unenforced (bench/offline contexts). */
@@ -53,6 +53,12 @@ export interface ModelOptions {
    *  unaffected. */
   tools?: ProviderTool[];
   toolChoice?: ProviderToolChoice;
+  /** Receives user-visible text as the model produces it. Only `completeText`
+   *  honours it, and only for prose: a JSON-parsed call gains nothing from a
+   *  half-written object. Chunks are sanitized before they are handed over. */
+  onDelta?: (chunk: string) => void;
+  /** A retry discarded what was streamed so far; the caller must clear it. */
+  onStreamRestart?: () => void;
 }
 
 /**
@@ -326,7 +332,21 @@ export const modelGateway = {
     takeBudgetSlot(opts.budget, callType);
     const reliability = opts.reliability ?? CALL_RELIABILITY[callType];
     const start = Date.now();
+    // Sanitizing a STREAM is not the same job as sanitizing a string: a chunk
+    // boundary can split a banned word in half. The stream sanitizer holds the
+    // tail back until it is complete, so nothing reaches the screen that the
+    // final `sanitize` below would have removed.
+    const streamFilter = opts.onDelta ? createStreamSanitizer() : null;
+    const onDelta = opts.onDelta
+      ? (chunk: string) => {
+          const safe = streamFilter!.push(chunk);
+          if (safe) opts.onDelta!(safe);
+        }
+      : undefined;
+
     const raw = await queuedTextCompletion(messages, maxTokens, {
+      onDelta,
+      onStreamRestart: opts.onStreamRestart,
       fast: opts.fast ?? false,
       tier: opts.tier,
       temperature: opts.temperature ?? config.temperature,
@@ -343,6 +363,10 @@ export const modelGateway = {
       onRoute: opts.onRoute,
       onUsage: usageSink(opts, messages),
     });
+    if (streamFilter) {
+      const tail = streamFilter.flush();
+      if (tail) opts.onDelta!(tail);
+    }
     perf("model.completeText", Date.now() - start, {
       tier: opts.tier,
       fast: opts.fast ?? false,

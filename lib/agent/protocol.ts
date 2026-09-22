@@ -52,6 +52,7 @@ export function parseStreamEvent(value: unknown): AgentStreamEvent {
 
   switch (value.type) {
     case "status":
+    case "delta":
     case "progress":
     case "plan":
     case "plan_update":

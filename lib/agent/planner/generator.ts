@@ -6,6 +6,7 @@ import { modelGateway } from "../model-gateway";
 import { tierForRole } from "../model-tiers";
 import { sanitize } from "../sanitize";
 import type { NimMessage, StreamEvent } from "../types";
+import type { ProviderRoute } from "@/lib/nim/internal-client";
 import { PLAN_SYSTEM_PROMPT } from "../static-prompts";
 import { buildContextWindow, renderContextWindow, CONTEXT_PRESETS } from "../context";
 import { frameUntrustedContent } from "../untrusted-content";
@@ -183,7 +184,7 @@ export async function generatePlanDoc(
     // Use the healthy fast hosted route here; deterministic schema, scope and
     // verification guards still validate its plan before execution.
     fast: true,
-    onRoute: (route: "hosted" | "gemini") => {
+    onRoute: (route: ProviderRoute) => {
       lane = route;
     },
   };

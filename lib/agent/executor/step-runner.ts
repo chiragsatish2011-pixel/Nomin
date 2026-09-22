@@ -9,6 +9,7 @@ import { sanitizeTraceEntry } from "../sanitize";
 import { perf } from "../perf";
 import type { NimMessage } from "../types";
 import { executePromptFor, RAW_FILE_AUTHOR_SYSTEM_PROMPT } from "../static-prompts";
+import { executorToolOptions } from "./tool-schemas";
 import { buildContextWindow, contextWindowToMessages, CONTEXT_PRESETS, RENDER_PRESETS } from "../context";
 import { applyTrace, pendingSteps, renderHandoffCheckpoint, type TaskState } from "../task-state";
 import { canUseFastTier, decideThinking } from "../thinking";
@@ -263,6 +264,8 @@ export async function executeSteps(
               reliability: authoringReliability,
               signal,
               onRoute: (route) => { providerPath = route; },
+              // Absent unless this deployment opted in; see tool-schemas.ts.
+              ...executorToolOptions(step.tool, { isRetry }),
             });
           } catch (error) {
             throwIfCancelled();
@@ -297,6 +300,7 @@ export async function executeSteps(
           reliability: authoringReliability,
           signal,
           onRoute: (route) => { providerPath = route; },
+          ...executorToolOptions(step.tool, { isRetry }),
         });
       } catch (error) {
         throwIfCancelled();
@@ -333,6 +337,19 @@ export async function executeSteps(
       // decision was in flight.
       throwIfCancelled();
       correction = undefined;
+
+      // An unreadable reply is a failed decision, never a finished step. Checked
+      // BEFORE the schema test, because the wrapper the client builds around
+      // unparseable text is deliberately schema-valid so it can be carried this
+      // far — see AgentTurn.parse_error.
+      if (turn.parse_error) {
+        lastError =
+          `${turn.parse_error} Reply with ONLY the JSON object for this step's tool call — no prose, no markdown fences.`;
+        perf("step3.decisionParseError", 0, { stepId: step.step_id, attempt });
+        remember({ role: "tool", tool_name: "model", content: `Decision error: ${lastError}` });
+        emit({ type: "tool_result", step_id: step.step_id, status: "error", output: lastError });
+        continue;
+      }
 
       // Validate model response schema
       if (!isValidAgentTurn(turn)) {

@@ -5,7 +5,8 @@ Use this map to find the right layer before changing a file.
 ## Runtime layers
 
 - `app/` — Next.js routes and browser UI.
-  - `app/page.tsx` — main conversation shell, composer, session switching, and stream handling.
+  - `app/page.tsx` — the conversation shell: sidebar, transcript, composer, session switching, and stream handling.
+  - `app/chat.css` — the shell's stylesheet; `app/globals.css` holds the theme tokens and everything else.
   - `app/components/` — reusable UI: preview, artifacts, trace, auth, theme, and mascot.
   - `app/lib/workspace-container.ts` — the browser-owned WebContainer and preview lifecycle.
   - `app/hooks/useWebContainerExecutor.ts` — browser-to-server tool-result bridge.
@@ -15,12 +16,13 @@ Use this map to find the right layer before changing a file.
   - `intent/` — classification and clarification decisions.
   - `planner/` — plan generation and plan normalization.
   - `executor/` — step decisions, tool calls, retries, coherence, and verification.
-  - `synthesis/` and `output/` — evidence-based final response construction.
+  - `synthesis/` and `output/` — evidence-based final response construction, including the streamed conversational answer.
   - `quality-chain.ts` — selective coding/design critic chain.
   - `session-store.ts` and `task-state.ts` — bounded conversation memory and durable-in-process checkpoints.
 - `lib/nim/` — provider transport and capacity controls.
-  - `internal-client.ts` — hosted/Gemini routing, fallback, timeouts, and queue accounting.
-  - `key-pool.ts` and `rate-governor.ts` — shared request budgets and credential leases.
+  - `internal-client.ts` — the one provider lane: request queue, SSE streaming, retries, timeouts, and usage accounting.
+  - `single-key.ts` and `rate-governor.ts` — the single credential's request budget and leases.
+  - `circuit-breaker.ts` — fail fast after repeated upstream failures.
   - `byok-context.ts` — isolated user-provider context.
 - `public/` — runtime assets only: favicon, fonts, and brand assets.
 

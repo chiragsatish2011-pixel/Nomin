@@ -1,25 +1,31 @@
 # Trion provider architecture and agent instruction contract
 
 This document describes the runtime contract. It is documentation for humans;
-the executable source of truth remains `lib/agent/system-prompt.ts`,
-`lib/agent/static-prompts.ts`, `lib/agent/model-gateway.ts`, and
-`lib/nim/internal-client.ts`.
+the executable source of truth remains `lib/agent/static-prompts.ts`,
+`lib/agent/model-gateway.ts`, and `lib/nim/internal-client.ts`.
 
 ## Provider responsibilities
 
-| Stage | Primary path | Fallback | User-visible identity |
-| --- | --- | --- | --- |
-| Direct chat, classification, clarification | Hosted Trion route | bounded hosted retry | Trion |
-| Plan generation | Gemini build lane | hosted Trion route | Trion |
-| Execution decisions | Gemini build lane | hosted Trion route | Trion |
-| Design/coding review | Gemini build lane | hosted Trion route | Trion |
-| Final synthesis | Hosted Trion route | deterministic evidence-only response | Trion |
-| Preview hosting | WebContainer/browser bridge | actionable paused state | Trion |
+There is ONE provider lane. The separate Gemini build lane this document used
+to describe, and the five-key hosted pool behind it, were both removed from the
+codebase; every stage below now runs against the single configured
+OpenAI-compatible endpoint (`TRION_BASE_URL` + `TRION_API_KEY`), on either the
+primary or the fast model.
 
-Gemini credentials are a separate pool from hosted credentials. They are never
-assigned to a Trion tier and are never included in user-visible telemetry.
-Ollama is not an internal execution path: Trion does not health-check it, send
-it model requests, or use it as a fallback.
+| Stage | Model | Streamed to the user | Fallback |
+| --- | --- | --- | --- |
+| Intent classification | fast | no (enum) | deterministic heuristics; skipped entirely for closed conversational classes |
+| Direct chat answer | fast | YES, token by token | JSON-envelope answer call, then a fixed message |
+| Plan generation | fast, via `tool_choice` | no (structured) | prompted-JSON parse, then one bounded repair re-ask |
+| Execution decisions | primary (fast where the step is fully determined) | no (structured) | bounded retry with the parse error fed back |
+| Design/coding review | fast | no | skipped; the unreviewed result still ships with its evidence |
+| Final synthesis | fast, then primary | no | deterministic trace-only summary |
+| Preview hosting | — | — | actionable paused state |
+
+A user's own connection (BYOK) replaces the endpoint and model for every row
+without changing any of the contract below. Ollama is not an internal execution
+path: Trion does not health-check it, send it model requests, or use it as a
+fallback.
 
 ## Turn contract
 
@@ -44,20 +50,37 @@ it model requests, or use it as a fallback.
    tool trace, and verification evidence. If synthesis cannot be trusted, use
    the deterministic trace-only summary.
 
-## Provider fallback rules
+## Failure rules
 
-Planning and execution order:
+With one lane there is no other provider to advance to, so a failed call is
+handled by BOUNDED RETRY and then by degradation, never by rerouting:
 
-```text
-Gemini build lane -> hosted Trion
-```
+- Each call type declares its own timeout and attempt count
+  (`CALL_RELIABILITY` in `model-gateway.ts`) plus an absolute wall-clock
+  deadline, so no stage can hold a turn open indefinitely.
+- A 429 or 503 paces the lane through the rate governor and honours the
+  provider's own `retry-after`; it does not park the only credential.
+- Repeated upstream failures open a circuit breaker that fails fast with an
+  honest message rather than queueing work that cannot run.
+- A reply that cannot be parsed as a decision is re-asked with the parse error
+  attached; it is never accepted as a finished step.
 
-If Gemini is unavailable, rate-limited, misconfigured, or times out, the same
-checkpointed call advances to the hosted Trion route. This does not create a
-second user turn or lose the plan.
+## Streaming
 
-Final synthesis never follows the build provider. It remains hosted so the
-user receives one consistent voice and one sanitization boundary.
+A prose call may stream. The client sends `stream: true`, parses the SSE frames
+of whichever wire format the endpoint speaks (OpenAI-compatible or Anthropic),
+and hands each visible delta to its caller as it arrives; the assembled text is
+still returned, so every downstream check sees exactly what the user saw.
+
+Only the conversational answer streams today, as `delta` events on the turn's
+NDJSON stream. Structured calls (plans, execution decisions) do not: a
+half-written JSON object cannot be parsed, so partial text buys nothing there.
+
+Two boundaries apply to every streamed chunk before it leaves the server:
+reasoning the model wrapped in `<think>` is suppressed mid-stream, and the
+sanitizer holds the last two tokens back so a banned word split across a chunk
+boundary can never be printed and then retracted. A retry emits a reset, which
+tells the client to discard what the failed attempt already showed.
 
 ## Instructions every model receives
 
@@ -105,11 +128,16 @@ only the public AgentOutput contract.
 
 ## Rate and latency controls
 
-- Hosted requests use the existing shared key-pool governor and 40-RPM safety
-  budget; multiple hosted keys do not multiply a shared allowance.
-- Gemini has its own bounded pool and configurable `GEMINI_RPM_LIMIT` and
-  `GEMINI_TPM_LIMIT` values. The two keys are selected by least load, with key
-  1 preferred for planning and key 2 preferred for execution/review.
+- One credential means one budget. `TRION_RPM_LIMIT` (default 40) is the
+  account's allowance, not a per-key one, and the governor halves effective RPM
+  on a 429 and recovers additively.
+- The queue is priority-ordered, not FIFO: classification runs before planning,
+  planning before execution, synthesis last. Under a request ceiling that
+  ordering, not raw speed, decides perceived latency.
+- Every call type carries an input-token ceiling, so one pathological read
+  cannot burn a day of credits inside a single turn.
 - Preview hosting does not spend a model request.
 - No extra model call is made for a direct answer, clarification, or simple
-  deterministic UI state.
+  deterministic UI state. A greeting, a thanks, an identity question and a
+  capability question skip the classification call outright: the heuristics
+  already decide those, and the call was pure latency in front of the answer.

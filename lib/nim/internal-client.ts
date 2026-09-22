@@ -3,6 +3,14 @@ import { providerModelForTier } from "@/lib/agent/model-tiers";
 import { estimateCallTokens } from "./rate-governor";
 import { createCircuitBreaker } from "./circuit-breaker";
 import { createKeyLane, providerKeyFromEnv, type KeyLease } from "./single-key";
+import {
+  localLaneFromEnv,
+  localLaneReady,
+  noteLocalFailure,
+  noteLocalFallback,
+  noteLocalSuccess,
+  type LocalLaneConfig,
+} from "./local-lane";
 import { logProviderRequest, logProviderResponse, logProviderError } from "./diagnostics";
 import { currentByokProvider, type ByokProviderConfig } from "./byok-context";
 import { currentTurnSignal } from "@/lib/agent/turn-control";
@@ -34,6 +42,16 @@ export type ProviderToolChoice =
  *  gateway so the agent layer can attribute real cost per call type — the
  *  char/4 estimate cannot see completion tokens at all, and a reasoning model
  *  spends most of its output budget there. */
+/**
+ * Which lane served a call.
+ *
+ * "local" is a model running on the user's own machine (see local-lane.ts),
+ * "hosted" is the configured NVIDIA endpoint, "byok" is the user's own
+ * connected provider. A turn may cross from local to hosted mid-call; the
+ * route reported is the one that actually produced the answer.
+ */
+export type ProviderRoute = "hosted" | "local";
+
 export type CompletionUsage = {
   model: string;
   promptTokens: number;
@@ -107,14 +125,35 @@ export type CompletionOptions = {
   signal?: AbortSignal;
   /** There is exactly one route. Kept as a field so telemetry and the BYOK
    *  branch keep a stable shape; it no longer selects between providers. */
-  route?: "hosted";
-  onRoute?: (route: "hosted") => void;
+  route?: ProviderRoute;
+  onRoute?: (route: ProviderRoute) => void;
   /** OpenAI-shaped function-calling passthrough. Sent verbatim on the
    *  OpenAI-compatible route only (the hosted lane plus OpenAI-shaped BYOK);
    *  ignored on the Anthropic BYOK route, which uses a different tool schema.
    *  Absent by default so existing calls are byte-identical. */
   tools?: ProviderTool[];
   toolChoice?: ProviderToolChoice;
+  /**
+   * Token sink. Present means "stream this call": the request is sent with
+   * `stream: true` and each content delta is handed over as it arrives.
+   *
+   * Every call in this codebase used to be a blocking request/response, so the
+   * user stared at a spinner for the WHOLE generation — 3s at best and 70s at
+   * the measured worst case on the primary tier — before a single character
+   * appeared. That is the difference between this product and the assistants it
+   * is compared to, and it is a transport property, not a model one.
+   *
+   * Only prose calls stream. A call whose result is parsed as JSON (a plan, an
+   * execution decision) gains nothing from partial text, so it stays on the
+   * blocking path where truncation and tool_calls are handled exactly as before.
+   */
+  onDelta?: (chunk: string) => void;
+  /**
+   * A retry discards whatever the failed attempt already streamed. Without this
+   * the client would append the second attempt's text to the first attempt's
+   * half-sentence. Fired before the first delta of any attempt after the first.
+   */
+  onStreamRestart?: () => void;
 };
 
 /** A single dispatch attempt. Retries re-enter the queue as a NEW attempt of the
@@ -133,12 +172,17 @@ type QueueTask = {
   seq: number;
   attempt: number;
   maxAttempts: number;
-  route: "hosted";
+  route: ProviderRoute;
+  /** Set once a local attempt has failed: this task goes hosted from here. */
+  forceHosted?: boolean;
   /** Captured at enqueue time so queued work cannot lose the request-scoped
    * provider context when it is dispatched later. */
   byok?: ByokProviderConfig;
   /** Absolute time this call must be settled by, one way or the other. */
   expiresAt: number;
+  /** Which attempt has already streamed text to the caller, so a retry can
+   *  tell the caller to discard it. */
+  streamedAttempt?: number;
   /** Aborts the CURRENT in-flight attempt, if there is one. Re-pointed on each
    *  dispatch so a deadline or a user Stop reaches the live request. */
   abortInFlight?: () => void;
@@ -165,6 +209,7 @@ function settleTask(task: QueueTask, outcome: { ok: true; value: unknown } | { o
 /** One credential, one provider, one route. Kept as a function (rather than
  *  inlining "hosted") so telemetry and tests keep a single source of truth. */
 export function providerFallbackOrder(): Array<QueueTask["route"]> {
+  if (localLaneReady()) return ["local", "hosted"];
   return ["hosted"];
 }
 
@@ -359,25 +404,48 @@ async function pump(): Promise<void> {
         continue;
       }
 
+      const usingByok = Boolean(task.byok);
+      // A model on this machine has no shared quota to protect and no cost per
+      // request, so it takes neither a credential lease nor a slot of the
+      // hosted RPM budget. It is also the reason a deployment with NO hosted
+      // key at all is still a working install.
+      const usingLocal = !usingByok && !task.forceHosted && localLaneReady();
+
       // Reject while the breaker is open BEFORE consulting or charging the
       // local budget. A breaker rejection never crossed the network, so
       // recording it as an admitted request creates phantom saturation and
       // delays the first healthy request after recovery.
-      const breaker = task.byok ? null : hostedCircuitBreaker;
+      //
+      // The breaker describes THE HOSTED ENDPOINT. Deciding this before
+      // choosing a lane is how a tripped internet lane came to reject calls a
+      // model on this machine was about to serve — the exact moment local is
+      // most useful. A local call skips it, the same way dispatch does.
+      const breaker = usingByok || usingLocal ? null : hostedCircuitBreaker;
       if (breaker?.isOpen()) {
         settleTask(task, { ok: false, error: new Error("Trion is briefly pausing requests after repeated upstream failures. Try again in a moment.") });
         continue;
       }
 
-      const usingByok = Boolean(task.byok);
       let lease: KeyLease | null = null;
-      if (!usingByok) {
+      if (!usingByok && !usingLocal) {
         // One credential: there is nothing to choose between. Either the lane
         // can take the request now, or the task waits. The former pool version
         // scored keys by load, preferred a per-role key, and could fail over to
         // a second lane — none of which is reachable with a single key.
         if (keyLane.isEmpty()) {
-          settleTask(task, { ok: false, error: new Error("No AI provider is configured. Set TRION_API_KEY in .env.local and restart.") });
+          // Name the situation the operator is actually in. A local lane that
+          // is configured but cooling is a completely different problem from
+          // nothing being configured at all, and the old message reported both
+          // as the latter.
+          const local = localLaneFromEnv();
+          settleTask(task, {
+            ok: false,
+            error: new Error(
+              local
+                ? `The local model at ${local.baseUrl} is not answering, and no fallback is configured. Start it, or set TRION_API_KEY for the hosted fallback.`
+                : "No AI provider is configured. Set TRION_LOCAL_BASE_URL + TRION_LOCAL_MODEL for a local model, or TRION_API_KEY for the hosted one."
+            ),
+          });
           continue;
         }
         const waitMs = keyLane.waitMs(task.estTokens);
@@ -397,17 +465,18 @@ async function pump(): Promise<void> {
         lastDispatchAt = Date.now();
       }
       queue.splice(queue.indexOf(task), 1);
+      task.route = usingLocal ? "local" : "hosted";
       inFlight += 1;
-      if (!usingByok) hostedInFlight += 1;
+      if (!usingByok && !usingLocal) hostedInFlight += 1;
       // Something moved. A task blocked earlier in this pass may have been
       // waiting on budget that this dispatch is about to release, so give every
       // blocked task a fresh look rather than carrying a stale verdict forward.
       blocked.clear();
       blockedWakeAt = null;
 
-      void dispatch(task, lease, usingByok).finally(() => {
+      void dispatch(task, lease, usingByok, usingLocal).finally(() => {
         inFlight -= 1;
-        if (!usingByok) hostedInFlight -= 1;
+        if (!usingByok && !usingLocal) hostedInFlight -= 1;
         void pump();
       });
     }
@@ -418,7 +487,7 @@ async function pump(): Promise<void> {
 
 /** Run exactly one attempt. Success resolves the caller; a retryable failure
  *  re-queues the task with a delay instead of blocking this slot. */
-async function dispatch(task: QueueTask, lease: KeyLease | null, usingByok: boolean): Promise<void> {
+async function dispatch(task: QueueTask, lease: KeyLease | null, usingByok: boolean, usingLocal = false): Promise<void> {
   // The deadline or a user Stop can settle a task between selection and
   // dispatch. Spending a provider request on an already-settled call is pure
   // waste against the rate ceiling and its result has nowhere to go.
@@ -427,7 +496,10 @@ async function dispatch(task: QueueTask, lease: KeyLease | null, usingByok: bool
     return;
   }
   task.opts.onRoute?.(task.route);
-  const breaker = usingByok ? null : hostedCircuitBreaker;
+  // The hosted breaker describes the hosted endpoint. A model on localhost is
+  // not affected by it, and must not be withheld because the internet lane is
+  // briefly in trouble — that is exactly the moment local is most useful.
+  const breaker = usingByok || usingLocal ? null : hostedCircuitBreaker;
   if (breaker?.isOpen()) {
     if (lease) keyLane.settleFailure(lease);
     settleTask(task, { ok: false, error: new Error("Trion is briefly pausing requests after repeated upstream failures. Try again in a moment.") });
@@ -438,25 +510,105 @@ async function dispatch(task: QueueTask, lease: KeyLease | null, usingByok: bool
   // this, a 180s authoring attempt started near the deadline would keep the
   // socket open long after the caller had already been told the call failed.
   const remaining = task.expiresAt - Date.now();
+  const sink = task.opts.onDelta;
   const attemptOpts: CompletionOptions = {
     ...task.opts,
     timeoutMs: Math.max(1_000, Math.min(task.opts.timeoutMs ?? REQUEST_TIMEOUT_MS, remaining)),
+    // Attempt-aware, so a retry can never concatenate onto the text the failed
+    // attempt already delivered. The restart fires on the first delta of the
+    // new attempt rather than at dispatch, because an attempt that dies before
+    // producing any token has nothing to discard.
+    onDelta: sink
+      ? (chunk: string) => {
+          if (task.streamedAttempt !== task.attempt) {
+            if (task.streamedAttempt !== undefined) task.opts.onStreamRestart?.();
+            task.streamedAttempt = task.attempt;
+          }
+          sink(chunk);
+        }
+      : undefined,
   };
+
+  const local = usingLocal ? localLaneFromEnv() : null;
+  if (usingLocal && local && attemptOpts.timeoutMs && local.timeoutMs) {
+    attemptOpts.timeoutMs = Math.min(attemptOpts.timeoutMs, local.timeoutMs);
+  }
 
   try {
     const text = await callProviderText(task.messages, task.maxTokens, attemptOpts, lease?.secret, task.byok, (usage) => {
       // Correct this key's pessimistic pre-flight estimate with what it was
       // actually billed. Concurrent responses settle against their own lease.
       if (lease) keyLane.settleSuccess(lease, usage.promptTokens + usage.completionTokens);
-    }, (abort) => { task.abortInFlight = abort; });
+    }, (abort) => { task.abortInFlight = abort; }, local ?? undefined);
+    if (usingLocal) noteLocalSuccess();
     breaker?.breakSequence();
     settleTask(task, { ok: true, value: task.parse ? parseAgentTurn(text) : text });
   } catch (error) {
     if (task.settled) return;
+    if (usingLocal) {
+      await failLocal(task, error);
+      return;
+    }
     await settleFailure(task, error, lease, usingByok);
   } finally {
     task.abortInFlight = undefined;
   }
+}
+
+/**
+ * A local attempt failed. Move THIS call to the hosted lane.
+ *
+ * Not a retry: the user asked one question, and answering it on a different
+ * lane is not a second attempt at the same thing. `task.attempt` is deliberately
+ * untouched, so a local server that is down does not silently eat the retry
+ * budget the hosted lane is going to need. A user Stop and the call's absolute
+ * deadline both still apply, because `requeue` and the deadline timer are
+ * unchanged by which lane serves the work.
+ */
+async function failLocal(task: QueueTask, error: unknown): Promise<void> {
+  const { cooling } = noteLocalFailure(error);
+  const config = localLaneFromEnv();
+  logProviderError({
+    label: task.opts.label ?? "unlabelled",
+    route: "local",
+    endpoint: config?.baseUrl ?? "<unset>",
+    model: config?.model ?? "<unset>",
+    keyPresent: Boolean(config?.apiKey),
+    keyLength: config?.apiKey?.length ?? 0,
+    error,
+  });
+  perf("provider.localFailed", 0, {
+    label: task.opts.label ?? "",
+    cooling,
+    hostedAvailable: !keyLane.isEmpty(),
+  });
+
+  // A user Stop that landed during the local call must not be converted into a
+  // hosted request.
+  if (task.settled) return;
+
+  if (keyLane.isEmpty()) {
+    // Nothing to fall back to. Say what failed and where, not "no provider
+    // configured" — the operator configured one, and it is not answering.
+    settleTask(task, {
+      ok: false,
+      error: new Error(
+        `The local model at ${config?.baseUrl ?? "the configured address"} could not complete this request, and no hosted fallback is configured. Set TRION_API_KEY to fall back automatically.`
+      ),
+    });
+    return;
+  }
+
+  noteLocalFallback();
+  // Anything the failed local attempt already streamed is not part of the
+  // answer the hosted lane is about to write.
+  if (task.streamedAttempt !== undefined) {
+    task.opts.onStreamRestart?.();
+    task.streamedAttempt = undefined;
+  }
+  task.forceHosted = true;
+  task.route = "hosted";
+  requeue(task, "local lane unavailable");
 }
 
 /**
@@ -765,7 +917,10 @@ export function getRateSnapshot() {
 }
 
 export function hasConfig() {
-  return !keyLane.isEmpty();
+  // A local-only install is a configured install. Requiring a hosted key here
+  // would report a machine that can answer every request as having no provider
+  // at all, and the UI reads this to decide whether any model is selectable.
+  return !keyLane.isEmpty() || localLaneFromEnv() !== null;
 }
 
 async function callProviderText(
@@ -777,32 +932,49 @@ async function callProviderText(
   onSettle?: (usage: CompletionUsage) => void,
   /** Hands the caller a way to abort THIS request, so a wall-clock deadline or a
    *  user Stop can close the socket instead of waiting for the response. */
-  registerAbort?: (abort: () => void) => void
+  registerAbort?: (abort: () => void) => void,
+  /** Present when this attempt is being served by a model on the user's own
+   *  machine. It replaces the hosted endpoint, model and credential; BYOK still
+   *  outranks it, because a connection the user set up explicitly is a choice,
+   *  not a default. */
+  local?: LocalLaneConfig
 ): Promise<string> {
   const fast = opts.fast ?? false;
   const temperature = opts.temperature ?? 0.15;
   const tier = opts.tier ?? "trion-1.4";
   const model = byok
     ? (fast && byok.fastModel ? byok.fastModel : byok.model)
-    : providerModelForTier(tier, fast);
+    : local
+      ? (fast && local.fastModel ? local.fastModel : local.model)
+      : providerModelForTier(tier, fast);
   const baseUrl = (byok
     ? byok.baseUrl
-    : (process.env.TRION_BASE_URL || process.env.NIM_BASE_URL || "https://integrate.api.nvidia.com/v1"))?.replace(/\/$/, "");
-  const apiKey = byok ? byok.apiKey : providerKey;
+    : local
+      ? local.baseUrl
+      : (process.env.TRION_BASE_URL || process.env.NIM_BASE_URL || "https://integrate.api.nvidia.com/v1"))?.replace(/\/$/, "");
+  // A local server usually wants no credential at all. An empty string is a
+  // valid answer here, not a misconfiguration, so the "no usable route" check
+  // below treats a local target as already authorized.
+  const apiKey = byok ? byok.apiKey : local ? (local.apiKey ?? "") : providerKey;
 
-  if (!model || !baseUrl || !apiKey) {
+  if (!model || !baseUrl || (!apiKey && !local)) {
     // Name the MISSING piece. The old message said only "not configured",
     // which is what let an absent TRION_API_KEY look identical to a bad model
     // id for the entire life of this bug.
-    const missing = [
-      !apiKey ? "no API key (set TRION_API_KEY in .env.local)" : null,
-      !model ? "no model id (set TRION_MODEL_PRIMARY)" : null,
-      !baseUrl ? "no base URL (set TRION_BASE_URL)" : null,
-    ].filter(Boolean).join("; ");
+    const missing = local
+      ? [
+          !model ? "no local model id (set TRION_LOCAL_MODEL)" : null,
+          !baseUrl ? "no local base URL (set TRION_LOCAL_BASE_URL)" : null,
+        ].filter(Boolean).join("; ")
+      : [
+          !apiKey ? "no API key (set TRION_API_KEY in .env.local)" : null,
+          !model ? "no model id (set TRION_MODEL_PRIMARY)" : null,
+          !baseUrl ? "no base URL (set TRION_BASE_URL)" : null,
+        ].filter(Boolean).join("; ");
     const error = new Error(`Trion has no usable model route: ${missing}.`);
     logProviderError({
       label: opts.label ?? "unlabelled",
-      route: byok ? "byok" : "hosted",
+      route: byok ? "byok" : local ? "local" : "hosted",
       endpoint: baseUrl ?? "<unset>",
       model: model ?? "<unset>",
       keyPresent: Boolean(apiKey),
@@ -828,23 +1000,29 @@ async function callProviderText(
   const endpoint = anthropic ? `${baseUrl}/messages` : `${baseUrl}/chat/completions`;
   const diag = {
     label: opts.label ?? "unlabelled",
-    route: byok ? "byok" : "hosted",
+    route: byok ? "byok" : local ? "local" : "hosted",
     endpoint,
     model,
     keyPresent: Boolean(apiKey),
-    keyLength: apiKey.length,
+    keyLength: apiKey?.length ?? 0,
   };
   logProviderRequest(diag);
 
   try {
     const system = messages.filter((entry) => entry.role === "system").map((entry) => entry.content).join("\n\n");
+    const streaming = typeof opts.onDelta === "function";
     const response = await fetch(
       endpoint,
       {
       method: "POST",
+      // A keyless local server gets no Authorization header at all. Sending
+      // `Bearer ` with nothing after it is not the same as sending nothing, and
+      // some servers reject it outright.
       headers: anthropic
-          ? { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
-          : { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+          ? { "content-type": "application/json", "x-api-key": apiKey ?? "", "anthropic-version": "2023-06-01" }
+          : apiKey
+            ? { "content-type": "application/json", authorization: `Bearer ${apiKey}` }
+            : { "content-type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify(anthropic ? {
         model,
@@ -852,6 +1030,7 @@ async function callProviderText(
         messages: messages.filter((entry) => entry.role !== "system").map((entry) => ({ role: entry.role, content: entry.content })),
         temperature,
         max_tokens: maxTokens,
+        ...(streaming ? { stream: true } : {}),
       } : {
         model,
         messages,
@@ -860,7 +1039,10 @@ async function callProviderText(
         // Only sent when the caller has an opinion. Omitting the key leaves the
         // provider's own default in place, which is what makes it possible to
         // measure a before/after against unmodified behaviour.
-        ...(!byok && typeof opts.thinking === "boolean"
+        // NVIDIA-specific. A local llama.cpp/Ollama/vLLM server rejects or
+        // ignores unknown body keys depending on the build, and an argument
+        // this lane cannot honour is not worth risking a 400 over.
+        ...(!byok && !local && typeof opts.thinking === "boolean"
           ? { chat_template_kwargs: { thinking: opts.thinking } }
           : {}),
         // Function-calling passthrough for the OpenAI-compatible route only.
@@ -868,6 +1050,10 @@ async function callProviderText(
         // bodies, and the Gemini/Anthropic branches above are untouched.
         ...(opts.tools ? { tools: opts.tools } : {}),
         ...(opts.toolChoice !== undefined ? { tool_choice: opts.toolChoice } : {}),
+        // `include_usage` keeps the token ledger honest on a streamed call:
+        // without it the final chunk carries no usage block and every streamed
+        // response would be recorded as costing zero tokens.
+        ...(streaming ? { stream: true, stream_options: { include_usage: true } } : {}),
       })
       }
     );
@@ -892,6 +1078,25 @@ async function callProviderText(
     }
 
     logProviderResponse({ ...diag, status: response.status, ms: Date.now() - started });
+
+    if (streaming) {
+      const streamed = await consumeEventStream(response, anthropic, opts.onDelta!);
+      const usage: CompletionUsage = {
+        model,
+        promptTokens: streamed.promptTokens,
+        completionTokens: streamed.completionTokens,
+        cachedPromptTokens: streamed.cachedPromptTokens,
+        ms: Date.now() - started,
+      };
+      onSettle?.(usage);
+      opts.onUsage?.(usage);
+      if ((streamed.finishReason === "length" || streamed.finishReason === "MAX_TOKENS" || streamed.finishReason === "max_tokens") && !opts.allowTruncated) {
+        throw new Error("Trion response reached its output limit before the file was complete.");
+      }
+      const streamedContent = streamed.content || streamed.toolCallText;
+      if (!streamedContent) throw new Error("Trion returned an empty response.");
+      return streamedContent;
+    }
 
     const data = (await response.json()) as {
       choices?: Array<{
@@ -972,6 +1177,192 @@ async function callProviderText(
   }
 }
 
+type StreamedCompletion = {
+  content: string;
+  toolCallText: string;
+  finishReason?: string;
+  promptTokens: number;
+  completionTokens: number;
+  cachedPromptTokens: number;
+};
+
+/**
+ * Suppress reasoning that leaks into the visible channel.
+ *
+ * Prose calls are sent with thinking off, but a reasoning model can still open
+ * a `<think>` block on its own, and on a streamed call there is no post-hoc
+ * sanitize between the model and the user's screen — the tokens ARE the screen.
+ * This is a streaming-safe gate: it holds back a partial opening tag rather than
+ * printing "<thi" and then deleting it.
+ */
+function createThinkFilter() {
+  const OPEN = "<think>";
+  const CLOSE = "</think>";
+  let inside = false;
+  let pending = "";
+
+  /** Could `tail` be the start of `token`? Used to hold an incomplete tag. */
+  const partialOf = (tail: string, token: string) => {
+    const max = Math.min(tail.length, token.length - 1);
+    for (let take = max; take > 0; take--) {
+      if (token.startsWith(tail.slice(tail.length - take))) return take;
+    }
+    return 0;
+  };
+
+  return (chunk: string): string => {
+    pending += chunk;
+    let visible = "";
+    for (;;) {
+      if (!inside) {
+        const open = pending.indexOf(OPEN);
+        if (open >= 0) {
+          visible += pending.slice(0, open);
+          pending = pending.slice(open + OPEN.length);
+          inside = true;
+          continue;
+        }
+        const hold = partialOf(pending, OPEN);
+        visible += pending.slice(0, pending.length - hold);
+        pending = pending.slice(pending.length - hold);
+        return visible;
+      }
+      const close = pending.indexOf(CLOSE);
+      if (close >= 0) {
+        pending = pending.slice(close + CLOSE.length);
+        inside = false;
+        continue;
+      }
+      // Still inside the reasoning block: keep only enough tail to recognise a
+      // closing tag split across chunks.
+      pending = pending.slice(Math.max(0, pending.length - CLOSE.length));
+      return visible;
+    }
+  };
+}
+
+/**
+ * Consume a Server-Sent Events completion, handing each visible delta to the
+ * caller as it lands and returning the assembled text at the end.
+ *
+ * Handles both wire formats this client speaks: OpenAI-compatible
+ * (`choices[].delta`) and Anthropic (`content_block_delta`). A malformed or
+ * truncated `data:` line is skipped rather than failing the call — the stream is
+ * a best-effort transport for text that is also fully returned at the end.
+ */
+async function consumeEventStream(
+  response: Response,
+  anthropic: boolean,
+  onDelta: (chunk: string) => void
+): Promise<StreamedCompletion> {
+  const body = response.body;
+  if (!body) throw new Error("Trion returned an empty response.");
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const visible = createThinkFilter();
+  const toolArgs = new Map<number, { name: string; args: string }>();
+  const result: StreamedCompletion = {
+    content: "",
+    toolCallText: "",
+    promptTokens: 0,
+    completionTokens: 0,
+    cachedPromptTokens: 0,
+  };
+
+  let buffer = "";
+  const handleLine = (line: string) => {
+    if (!line.startsWith("data:")) return;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+    let event: Record<string, unknown>;
+    try {
+      event = JSON.parse(payload) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+
+    if (anthropic) {
+      const type = event.type as string | undefined;
+      if (type === "content_block_delta") {
+        const delta = event.delta as { type?: string; text?: string } | undefined;
+        if (delta?.type === "text_delta" && delta.text) {
+          result.content += delta.text;
+          const shown = visible(delta.text);
+          if (shown) onDelta(shown);
+        }
+        return;
+      }
+      if (type === "message_start") {
+        const usage = (event.message as { usage?: { input_tokens?: number; cache_read_input_tokens?: number } } | undefined)?.usage;
+        result.promptTokens = usage?.input_tokens ?? 0;
+        result.cachedPromptTokens = usage?.cache_read_input_tokens ?? 0;
+        return;
+      }
+      if (type === "message_delta") {
+        const usage = event.usage as { output_tokens?: number } | undefined;
+        if (usage?.output_tokens) result.completionTokens = usage.output_tokens;
+        const stop = (event.delta as { stop_reason?: string } | undefined)?.stop_reason;
+        if (stop) result.finishReason = stop;
+        return;
+      }
+      return;
+    }
+
+    const usage = event.usage as
+      | { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } }
+      | undefined;
+    if (usage) {
+      result.promptTokens = usage.prompt_tokens ?? result.promptTokens;
+      result.completionTokens = usage.completion_tokens ?? result.completionTokens;
+      result.cachedPromptTokens = usage.prompt_tokens_details?.cached_tokens ?? result.cachedPromptTokens;
+    }
+
+    const choice = (event.choices as Array<{
+      delta?: { content?: string | null; tool_calls?: Array<{ index?: number; function?: { name?: string; arguments?: string } }> };
+      finish_reason?: string | null;
+    }> | undefined)?.[0];
+    if (!choice) return;
+    if (choice.finish_reason) result.finishReason = choice.finish_reason;
+    const text = choice.delta?.content;
+    if (typeof text === "string" && text) {
+      result.content += text;
+      const shown = visible(text);
+      if (shown) onDelta(shown);
+    }
+    for (const call of choice.delta?.tool_calls ?? []) {
+      const index = call.index ?? 0;
+      const entry = toolArgs.get(index) ?? { name: "", args: "" };
+      if (call.function?.name) entry.name = call.function.name;
+      if (call.function?.arguments) entry.args += call.function.arguments;
+      toolArgs.set(index, entry);
+    }
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newline = buffer.indexOf("\n");
+      while (newline >= 0) {
+        handleLine(buffer.slice(0, newline).trim());
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf("\n");
+      }
+    }
+    if (buffer.trim()) handleLine(buffer.trim());
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (toolArgs.size > 0) {
+    result.toolCallText = JSON.stringify(
+      [...toolArgs.values()].map((entry) => ({ name: entry.name, arguments: entry.args })),
+    );
+  }
+  return result;
+}
+
 /** Read status, headers and body off a failed Response once, up front. */
 async function toApiError(response: Response, byok = false): Promise<ApiError> {
   const body = await response.text().catch(() => "");
@@ -1002,7 +1393,68 @@ function describeError(error: unknown): string {
   return "Trion request failed.";
 }
 
+/**
+ * A native function-calling reply, if that is what this is.
+ *
+ * When a response comes back as `tool_calls` rather than as content, this
+ * client serializes the calls as `[{name, arguments}]` so the text path has
+ * something to carry (see `toolCallText`). Nothing downstream understood that
+ * shape, so a provider that honoured `tools` — the reliable way to get a
+ * schema-correct tool call — produced an UNPARSEABLE decision, which is the
+ * opposite of what asking for tools is for.
+ *
+ * `arguments` is a JSON string by the OpenAI spec, so it is parsed separately
+ * from the envelope. A call naming a tool this agent does not have is not
+ * rescued into a `finish`; it falls through to the raw-output wrapper so the
+ * executor re-asks.
+ */
+function toolCallTurn(content: string): AgentTurn | null {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("[")) return null;
+  let calls: unknown;
+  try {
+    calls = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(calls) || calls.length === 0) return null;
+  const first = calls[0] as { name?: unknown; arguments?: unknown };
+  const name = typeof first?.name === "string" ? first.name.trim() : "";
+  if (!VALID_ACTIONS.has(name)) return null;
+
+  let args: unknown = first.arguments;
+  if (typeof args === "string") {
+    try {
+      args = JSON.parse(args || "{}");
+    } catch {
+      return null;
+    }
+  }
+  if (typeof args !== "object" || args === null || Array.isArray(args)) return null;
+
+  const input = args as Record<string, unknown>;
+  // The schema carries `thought` alongside the call's own fields; keep it out
+  // of the tool input so a tool never receives an argument it did not declare.
+  const { thought, ...toolInput } = input;
+  return {
+    thought: typeof thought === "string" ? thought : "",
+    action: name as AgentTurn["action"],
+    action_input: toolInput,
+    summary: typeof input.summary === "string" ? input.summary : undefined,
+    done: name === "finish",
+  };
+}
+
+/** Exported for tests only: the decision parser is the contract between the
+ *  provider's reply and the executor, and it is worth testing directly. */
+export function parseAgentTurnForTest(content: string): AgentTurn {
+  return parseAgentTurn(content);
+}
+
 function parseAgentTurn(content: string): AgentTurn {
+  const fromTool = toolCallTurn(content);
+  if (fromTool) return fromTool;
+
   let parsed: Partial<AgentTurn>;
 
   try {
@@ -1037,7 +1489,10 @@ function wrapRawModelOutput(content: string): AgentTurn {
     action: "finish",
     action_input: { raw_model_output: content },
     summary: content.slice(0, 900),
-    done: true
+    done: true,
+    // Carried, not swallowed. See AgentTurn.parse_error: a caller that can
+    // re-ask should re-ask rather than accept this as a finished turn.
+    parse_error: "The response was not a valid tool-call object.",
   };
 }
 

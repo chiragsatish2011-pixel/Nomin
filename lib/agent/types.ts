@@ -57,6 +57,19 @@ export type AgentTurn = {
   action_input: Record<string, unknown>;
   summary?: string;
   done: boolean;
+  /**
+   * Set when the provider's reply could not be parsed as a decision at all, so
+   * the client wrapped the raw text into a shape the loop can carry.
+   *
+   * This flag is the difference between "the model chose to finish" and "the
+   * model said something we could not read". They used to be indistinguishable:
+   * an unparseable reply became `finish` + `done: true` with the raw text as its
+   * summary, so on the LAST step of a plan a malformed response was reported to
+   * the user as a completed build. The executor now treats a flagged turn as a
+   * decision error and re-asks, which is what it does for every other
+   * unreadable response.
+   */
+  parse_error?: string;
 };
 
 /** Optional context attached to the current turn only. */
@@ -413,7 +426,7 @@ export type ToolTraceEntry = {
   status: "success" | "error";
   attempt: number;
   /** Internal provider audit only. Removed before the public AgentOutput. */
-    path_used?: "hosted" | "gemini" | "deterministic";
+    path_used?: "hosted" | "local" | "deterministic";
 };
 
 /** Inline renderable artifact surfaced alongside the message. */
@@ -536,6 +549,9 @@ export type StreamEvent =
   | { type: "status"; status: AgentStatus }
   /** An evidence-based progress update for the person following the work. */
   | { type: "progress"; stage: "plan" | "paused" | "complete" | "notice" | "working"; message: string }
+  /** A slice of the assistant's visible answer, as the model produces it.
+   *  `reset` means a retry discarded everything streamed so far for this turn. */
+  | { type: "delta"; text?: string; reset?: true }
   | { type: "plan"; plan: Plan }
   | { type: "plan_update"; step_id: number; state: PlanStep["state"] }
   | { type: "tool_call"; call: ToolCall }

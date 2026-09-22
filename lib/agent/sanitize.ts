@@ -109,7 +109,7 @@ export function sanitizeTraceEntry(entry: {
   output: string;
   status: "success" | "error";
   attempt: number;
-  path_used?: "hosted" | "gemini" | "deterministic";
+  path_used?: "hosted" | "local" | "deterministic";
 }): {
   step_id: number;
   tool_name: string;
@@ -117,7 +117,7 @@ export function sanitizeTraceEntry(entry: {
   output: string;
   status: "success" | "error";
   attempt: number;
-  path_used?: "hosted" | "gemini" | "deterministic";
+  path_used?: "hosted" | "local" | "deterministic";
 } {
   // write_file content is the artifact being created: it stays byte-exact so
   // the trace remains evidence of what is actually on disk (see
@@ -221,4 +221,57 @@ export function assertNoLeaksInOutput(output: {
     if (artifact.language) assertNoLeaks(artifact.language, `final AgentOutput.artifacts[${i}].language`);
     if (artifact.preview_url) assertNoLeaks(artifact.preview_url, `final AgentOutput.artifacts[${i}].preview_url`);
   });
+}
+
+/**
+ * A `sanitize` that can be applied to a stream without ever printing a banned
+ * word and taking it back.
+ *
+ * `sanitize` is safe on a whole string but NOT on an arbitrary slice of one: a
+ * chunk boundary can fall inside "Nemo|tron", and each half passes the filter
+ * cleanly while the concatenation on screen does not. The fix is to hold back
+ * the tail rather than to weaken the filter — every banned pattern is at most
+ * two whitespace-separated tokens ("NVIDIA NIM" is the longest), so retaining
+ * the last two tokens of the buffer guarantees that anything released has
+ * already been seen in its complete form.
+ *
+ * Returns a `push` for each chunk and a `flush` for the end of the stream.
+ */
+/**
+ * The longest banned pattern is `nvidia/nemotron-3-ultra-550b-a55b` at 33
+ * characters. Holding back more than that is always safe, whatever the text
+ * looks like, so this is the fallback boundary for text that has no
+ * whitespace to find one in.
+ */
+const STREAM_HOLDBACK_CHARS = 48;
+
+export function createStreamSanitizer(): { push: (chunk: string) => string; flush: () => string } {
+  let held = "";
+  return {
+    push(chunk: string): string {
+      held += chunk;
+      // Keep the last two tokens (and the whitespace between them) back.
+      const boundary = held.search(/\s\S*\s\S*$/);
+      if (boundary < 0) {
+        // No whitespace to cut on. That is not an edge case: Chinese, Japanese
+        // and Thai are written without spaces, and so is a minified line, a
+        // base64 data URI or a long URL. Waiting for a space meant NOTHING was
+        // emitted until the stream ended — streaming silently turned itself off
+        // for those answers. Cut on a character count instead, which is safe
+        // because it still holds back more than the longest banned pattern.
+        if (held.length <= STREAM_HOLDBACK_CHARS) return "";
+        const release = held.slice(0, held.length - STREAM_HOLDBACK_CHARS);
+        held = held.slice(held.length - STREAM_HOLDBACK_CHARS);
+        return sanitize(release);
+      }
+      const release = held.slice(0, boundary);
+      held = held.slice(boundary);
+      return sanitize(release);
+    },
+    flush(): string {
+      const rest = held;
+      held = "";
+      return sanitize(rest);
+    },
+  };
 }

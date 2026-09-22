@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionCount } from "@/lib/agent/session-store";
 import { getCircuitState, getQueueDepth, getRateSnapshot, hasConfig } from "@/lib/nim/internal-client";
+import { localLaneSnapshot } from "@/lib/nim/local-lane";
 import { availableModelTiers, hasProviderCredential } from "@/lib/agent/model-tiers";
 import { getPendingApprovalCount, getPendingExecutionCount } from "@/lib/agent/execution/bridge";
 
@@ -29,6 +30,10 @@ export async function GET() {
     // what made a completely unconfigured server look healthy.
     availableModels: hasProviderCredential() ? availableModelTiers() : [],
     providerCredentialPresent: hasProviderCredential(),
+    // The local lane is operator-facing diagnostics: whether a model on this
+    // machine is configured, whether it is currently trusted, and how many
+    // calls it has handed to the hosted fallback. No credential is included.
+    localModel: localLaneSnapshot(),
     rate: getRateSnapshot()
   });
 }

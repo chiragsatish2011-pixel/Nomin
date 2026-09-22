@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   Code2,
+  Copy,
   FileText,
   Gauge,
   ListTree,
@@ -19,8 +20,8 @@ import {
   Sparkles,
   X
 } from "lucide-react";
-import { JellyfishMark } from "@/app/components/JellyfishMark";
-import { LandingJellyfish } from "@/app/components/LandingJellyfish";
+import { NominMark } from "@/app/components/NominMark";
+import { ThinkingMark } from "@/app/components/ThinkingMark";
 import { readConnection, safeConnectionLabel, type ByokConfig } from "@/app/lib/byok-client";
 import { Markdown } from "@/app/components/Markdown";
 import { ThemeToggle } from "@/app/components/ThemeToggle";
@@ -295,6 +296,56 @@ function readSessionIndex(): SessionEntry[] {
 // visible pop-in (read it in an effect). useSyncExternalStore has a dedicated
 // server snapshot, so neither happens.
 
+/* --- Sidebar preference -----------------------------------------------------
+ *
+ * A client-only value (stored preference, then viewport width) that the server
+ * cannot know. Held outside React so `useSyncExternalStore` can serve the
+ * server a stable `false` and the browser the real answer, with no effect
+ * writing state on mount and no hydration mismatch.
+ * -------------------------------------------------------------------------- */
+
+const SIDEBAR_KEY = "nomin-sidebar-collapsed";
+const sidebarListeners = new Set<() => void>();
+let sidebarCollapsedState: boolean | null = null;
+
+function readSidebarPreference(): boolean {
+  try {
+    const saved = window.localStorage.getItem(SIDEBAR_KEY);
+    if (saved === "1") return true;
+    if (saved === "0") return false;
+    return window.innerWidth <= 860;
+  } catch {
+    return false;
+  }
+}
+
+function subscribeSidebar(onChange: () => void) {
+  sidebarListeners.add(onChange);
+  return () => {
+    sidebarListeners.delete(onChange);
+  };
+}
+
+function sidebarSnapshot(): boolean {
+  if (sidebarCollapsedState === null) sidebarCollapsedState = readSidebarPreference();
+  return sidebarCollapsedState;
+}
+
+/** The server has no viewport and no storage; it always renders it open. */
+function sidebarServerSnapshot(): boolean {
+  return false;
+}
+
+function setSidebarPreference(collapsed: boolean) {
+  sidebarCollapsedState = collapsed;
+  try {
+    window.localStorage.setItem(SIDEBAR_KEY, collapsed ? "1" : "0");
+  } catch {
+    // A remembered preference is a convenience; the app works without it.
+  }
+  sidebarListeners.forEach((listener) => listener());
+}
+
 const EMPTY_SESSIONS: SessionEntry[] = [];
 /** Cached so the snapshot is referentially stable between notifications —
  *  returning a fresh array each call would re-render forever. */
@@ -492,12 +543,6 @@ function likelyNeedsWorkspace(text: string): boolean {
   return /\b(?:build|create|make|implement|develop|code|debug|fix|refactor|redesign|website|web\s*app|landing\s*page|dashboard|component|api|project|repository|codebase|file|folder|preview|run\s+(?:the|a|npm)|install|test|lint)\b/i.test(text);
 }
 
-function capacityLabel(capacity: CapacityStatus | null): string {
-  if (!capacity) return "Checking";
-  if (capacity.requestWindow.saturation >= 1) return "At capacity";
-  if (capacity.requestWindow.saturation >= 0.75) return "Busy";
-  return capacity.activity.building ? "Building" : capacity.activity.planning ? "Planning" : "Ready";
-}
 
 /**
  * Clarifications remain normal assistant text in the protocol, but numbered
@@ -521,8 +566,6 @@ function clarificationChoices(question: string | null): { prompt: string; choice
 }
 
 export default function Home() {
-  // Landing page shows first; the chat interface mounts once the user starts.
-  const [landing, setLanding] = useState(true);
   const mode = AGENT_MODE;
   const [model, setModel] = useState<AgentModel>("trion-1.4");
   // 1.4 is always the safe initial route. The server confirms any extra,
@@ -531,15 +574,16 @@ export default function Home() {
   const [availableModels, setAvailableModels] = useState<AgentModel[]>(["trion-1.4"]);
   const [capacity, setCapacity] = useState<CapacityStatus | null>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    if (typeof window === "undefined") return false;
-    try {
-      const saved = window.localStorage.getItem("nomin-sidebar-collapsed");
-      return saved === "1" || (saved === null && window.innerWidth <= 720);
-    } catch {
-      return false;
-    }
-  });
+  // Read through an external store, never in a state initializer.
+  //
+  // Computing this from localStorage and window.innerWidth during the first
+  // render is something the server cannot do, so on any viewport at or below
+  // the breakpoint the server rendered an open sidebar, the client rendered a
+  // closed one, and React threw a hydration error (#418) on every phone-sized
+  // load. useSyncExternalStore is the supported way to say "the server sees
+  // one value, the client sees another": it renders the server value, then
+  // swaps in the real one without a mismatch.
+  const sidebarCollapsed = useSyncExternalStore(subscribeSidebar, sidebarSnapshot, sidebarServerSnapshot);
   const [activeConnection, setActiveConnection] = useState<ByokConfig | null>(() => typeof window === "undefined" ? null : readConnection());
   const [message, setMessage] = useState("");
   const [submittedMessage, setSubmittedMessage] = useState<string | null>(null);
@@ -586,6 +630,16 @@ export default function Home() {
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [turns, setTurns] = useState<TurnEntry[]>([]);
   const [progressUpdates, setProgressUpdates] = useState<ProgressUpdate[]>([]);
+  /** The answer as it is being written. Replaced by the committed turn once the
+   *  `result` event lands, so there is never a moment with both on screen. */
+  const [streamingText, setStreamingText] = useState("");
+  /** Which assistant row's copy button was just pressed. */
+  const [copiedTurn, setCopiedTurn] = useState<number | null>(null);
+  /** Seconds the current turn has been working. A long wait with no number on
+   *  it reads as a hang; the same wait with a running count reads as work. */
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  /** The top bar grows a rule only once something is scrolled under it. */
+  const [topBarScrolled, setTopBarScrolled] = useState(false);
   const turnSeqRef = useRef(0);
   const currentTurnSeqRef = useRef(0);
   const [currentTurnSeq, setCurrentTurnSeq] = useState(0);
@@ -611,6 +665,11 @@ export default function Home() {
   const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
   const sessionHydratedRef = useRef(false);
   const sessions = useSyncExternalStore(subscribeSessions, sessionSnapshot, sessionServerSnapshot);
+
+  /** There is no separate landing PAGE any more — there is an empty thread.
+   *  This is the single condition that decides whether the composer sits in the
+   *  middle of the screen or docked under a transcript. */
+  const conversationStarted = turns.length > 0 || submittedMessage !== null;
 
   function restoreSavedSession(saved: SavedSession) {
     setTurns(saved.turns);
@@ -743,13 +802,13 @@ export default function Home() {
   }, [introActive, executor]);
 
   useEffect(() => {
-    if (landing) return;
+    if (!conversationStarted) return;
     let disposed = false;
     void executor.getSnapshot().then((snapshot) => {
       if (!disposed && snapshot.length) workspaceSnapshotRef.current = snapshot;
     });
     return () => { disposed = true; };
-  }, [landing, executor]);
+  }, [conversationStarted, executor]);
 
   // Keep the newest content in view as the turn streams.
   //
@@ -769,6 +828,35 @@ export default function Home() {
     if (!scroller) return;
     const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
     stickToBottomRef.current = distanceFromBottom < 120;
+    setTopBarScrolled(scroller.scrollTop > 4);
+  }
+
+  // The turn clock. Started by `busy`, stopped by it, and reset between turns
+  // so a new turn never inherits the previous one's count.
+  useEffect(() => {
+    if (!busy) return;
+    const startedAt = Date.now();
+    const tick = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1_000);
+    return () => {
+      window.clearInterval(tick);
+      setElapsedSeconds(0);
+    };
+  }, [busy]);
+
+  function collapseSidebar(collapsed: boolean) {
+    setSidebarPreference(collapsed);
+  }
+
+  async function copyText(text: string, id: number) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedTurn(id);
+      window.setTimeout(() => setCopiedTurn((current) => (current === id ? null : current)), 1_600);
+    } catch {
+      // Clipboard access can be denied; the text is still selectable.
+    }
   }
 
   function newThread() {
@@ -809,6 +897,7 @@ export default function Home() {
     setAttachedFiles([]);
     setLiveFiles([]);
     setProgressUpdates([]);
+    setStreamingText("");
     setWorkPanelOpen(false);
     setGateChoice(null);
     setApprovalReason("");
@@ -829,7 +918,6 @@ export default function Home() {
     void executor.reset();
     setSessionId(id);
     restoreSavedSession(readSavedSession(id));
-    setLanding(false);
   }
 
   function deleteSession(id: string, event: React.MouseEvent) {
@@ -877,16 +965,6 @@ export default function Home() {
     if (choice === "approve") approvePlan();
     else if (choice === "adjust") adjustPlan();
     else if (choice === "reject") cancelPlan();
-  }
-
-  /** Leave the landing card straight into a running turn, carrying whatever the
-   *  user already typed. `message` is current at click time, so submitMessage
-   *  picks it up without a round trip through state. */
-  function beginFromLanding() {
-    const submitted = message.trim();
-    if (!submitted) return;
-    setLanding(false);
-    void submitMessage();
   }
 
   function stopTurn() {
@@ -1081,6 +1159,7 @@ export default function Home() {
     setTraceNodes([]);
     setAgentOutput(null);
     setProgressUpdates([]);
+    setStreamingText("");
     setPanelOpen(false);
     // This is a per-turn preview list, not the workspace itself. Carrying it
     // into a new/retried request made a pause at zero actions claim that an
@@ -1283,6 +1362,17 @@ export default function Home() {
       return;
     }
 
+    // The answer, arriving as it is written. `reset` means the server retried
+    // and threw away what it had already sent.
+    if (event.type === "delta") {
+      if (event.reset) {
+        setStreamingText("");
+        return;
+      }
+      if (event.text) setStreamingText((current) => current + event.text);
+      return;
+    }
+
     // Status events drive the thinking indicator (Agent Reasoning phase)
     if (event.type === "status") {
       const status = toAgentStatus(event.status, "responding");
@@ -1370,10 +1460,16 @@ export default function Home() {
     }
 
     if (event.type === "plan") {
-      setPhase(`Plan: ${event.plan.summary}`);
+      // A plan with no summary is a server bug, but rendering the words
+      // "Plan — undefined" into the user's conversation is ours. Fall back to
+      // the step count, which the plan always has.
+      const planSummary = typeof event.plan.summary === "string" && event.plan.summary.trim()
+        ? event.plan.summary.trim()
+        : `${event.plan.steps.length} ${event.plan.steps.length === 1 ? "step" : "steps"}`;
+      setPhase(`Plan: ${planSummary}`);
       setAgentState("working");
       updateNode("intent", { status: "done" });
-      addNode({ id: "plan-root", kind: "plan", label: `Plan — ${event.plan.summary}`, status: "done", parentId: null });
+      addNode({ id: "plan-root", kind: "plan", label: `Plan — ${planSummary}`, status: "done", parentId: null });
       event.plan.steps.forEach((step, index) => {
         addNode({
           id: `step-${step.step_id}`,
@@ -1487,6 +1583,9 @@ export default function Home() {
             ? current
             : [...current, { id: seq, role: "assistant", content: event.output.type === "chat_reply" ? event.output.content : "" }]
         );
+        // The committed turn now renders this text; keeping the streamed copy
+        // would show it twice.
+        setStreamingText("");
       }
       if (event.output.type === "error") {
         setError(event.output.message);
@@ -1596,214 +1695,293 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
   // chat reply. Visibility is now driven by what THIS turn did (a write_file
   // call opens the panel) plus the user's own choice.
 
-  return (
-    <main
-      className={[
-        "zenApp",
-        sidebarCollapsed ? "sidebarCollapsed" : "",
-        // The composer is position:fixed, so it cannot see the side panel in
-        // the flex row. This tells it to stop where the panel starts —
-        // otherwise the input bar runs underneath the code view.
-        workPanelOpen && !landing ? "withPanel" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-    >
+  /** The assistant row for the turn that is on screen now.
+   *
+   *  It has three possible sources, in order: the text still streaming, the
+   *  committed transcript entry for this turn, and the chat_reply output. They
+   *  are one expression because they are one row — rendering the committed
+   *  entry from the transcript list instead put this turn's ANSWER above its
+   *  own status line and step list, since the transcript is drawn before the
+   *  live block. */
+  const committedAnswer = turns.find((turn) => turn.id === currentTurnSeq && turn.role === "assistant")?.content;
+  const liveAnswer = streamingText || committedAnswer || chatReply?.content || "";
 
-      {allowanceExhausted ? <section className="allowanceModal" role="dialog" aria-modal="true" aria-labelledby="allowance-title">
-        <div className="allowanceCard">
-          <JellyfishMark size={48} title="Nomin" />
-          <p>Building paused</p>
-          <h2 id="allowance-title">You’ve reached your included building allowance.</h2>
-          <span>It will become available again when your connected plan resets. If you do not want to wait, connect your own model and continue this saved build from the next unfinished step.</span>
-          <div><a href="/connections">Connect your own model</a><button type="button" onClick={() => setAllowanceDismissed(true)}>Not now</button></div>
-        </div>
-      </section> : null}
-      {landing ? (
-        <section className={`landingPage${sidebarCollapsed ? " sidebarCollapsed" : " withLandingSidebar"}`}>
-          <aside className={`landingSidebar${sidebarCollapsed ? " collapsed" : ""}`} aria-label="Conversations">
-            <div className="landingSidebarHead">
-              <span className="landingSidebarBrand"><JellyfishMark size={38} title="Nomin" /><span className="nominWordmark">Nomin</span></span>
-              <button type="button" onClick={() => { setSidebarCollapsed(true); localStorage.setItem("nomin-sidebar-collapsed", "1"); }} title="Collapse sidebar" aria-label="Collapse sidebar"><PanelLeftClose size={17} /></button>
-            </div>
-            <button className="newThreadButton" type="button" onClick={newThread}><Plus size={17} /><span>New thread</span></button>
-            <nav className="primaryNav landingPrimaryNav" aria-label="Settings and status">
-              <a className="primaryNavItem" href="/connections"><Plug size={17} /><span>Connections</span></a>
-            </nav>
-            <section className="sideModule historyModule">
-              <p className="sideLabel">Conversations</p>
-              {sessions.length === 0 ? <p className="historyEmpty">No conversations yet. Start one here.</p> : (
-                <ul className="historyList">{sessions.map((entry) => (
-                  <li key={entry.id}>
-                    <button className="historyItem" type="button" onClick={() => openSession(entry.id)} title={entry.title}><span className="historyTitle">{entry.title}</span><span className="historyMeta">{relativeTime(entry.updatedAt)}</span></button>
-                    <button className="historyDelete" type="button" onClick={(event) => deleteSession(entry.id, event)} aria-label={`Delete ${entry.title}`}><X size={13} /></button>
-                  </li>
-                ))}</ul>
-              )}
-            </section>
-          </aside>
-          {sidebarCollapsed ? <button className="landingSidebarReveal" type="button" onClick={() => { setSidebarCollapsed(false); localStorage.setItem("nomin-sidebar-collapsed", "0"); }} title="Open conversations" aria-label="Open conversations"><PanelLeftOpen size={18} /></button> : null}
-          <div className="landingThemeSlot">
-            <a className="capacityChip compact" href="/capacity" title="View context and provider capacity">
-              <Gauge size={15} />
-              <span>{capacity?.context ?? "Capacity"}</span>
-            </a>
-            <ThemeToggle />
-            <AccountMenu />
+  // Held back for the first two seconds: a counter that flashes "1s" on every
+  // quick turn is noise, and the number only means anything once a wait is
+  // long enough to wonder about.
+  const elapsedLabel = elapsedSeconds < 2
+    ? null
+    : elapsedSeconds < 60
+      ? `${elapsedSeconds}s`
+      : `${Math.floor(elapsedSeconds / 60)}m ${elapsedSeconds % 60}s`;
+
+  const currentThreadTitle = sessions.find((entry) => entry.id === sessionId)?.title
+    ?? (turns.find((turn) => turn.role === "user")?.content ?? "New chat");
+
+  /* ONE composer, rendered either in the middle of an empty thread or docked
+     under a transcript. It used to exist twice, in two slightly different
+     forms, which is why the landing box had no queue, no attachments and no
+     stop button. */
+  const composer = (
+    <>
+      {gateOpen ? (
+        <div className="nmGate" role="group" aria-label="Trion needs an answer">
+          <div className="nmGateHead">
+            {rejectPrompt ? <MessageCircleQuestion size={14} /> : <BadgeCheck size={14} />}
+            <span>{rejectPrompt ? "One question" : "Before I run this"}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setGateChoice(null);
+                if (rejectPrompt) dismissRejectPrompt();
+                else dismissGate();
+              }}
+            >
+              Cancel
+            </button>
           </div>
-          <div className="landingCard">
-            {/* The welcome animation is its own thing. The thinking indicator's
-                motion is a WORKING signal and must stay unique to that state —
-                reusing it here would teach the user that the shape moving means
-                "busy", then contradict it on the first screen they ever see. */}
-            <div className="landingGlyph welcoming">
-              <LandingJellyfish size={112} title="Nomin" />
-            </div>
-            <h1>What are you building?</h1>
-            <p className="landingSub">
-              Describe the outcome. Nomin will plan, build, and show you what is running.
-            </p>
-            <p className="landingBrand">NOMIN <span>CODING AGENT</span></p>
 
-            {/* A composer, not a Start button. The first thing you see is the
-                thing you type into — the pattern every serious assistant now
-                uses, because a landing screen that only says "Start" makes the
-                user pay for an extra click before saying anything. */}
-            {/* Same shell as the docked composer in the workspace — one
-                component's worth of visual language, so crossing from the
-                landing card into a conversation reads as the box moving down
-                rather than a different screen loading. */}
-            <div className="composerShell landing">
-              <textarea
-                aria-label="Describe what you want built"
-                placeholder="What should we build?"
-                ref={composerRef}
-                value={message}
-                onChange={(event) => {
-                  setMessage(event.target.value);
-                  resizeComposer(event.currentTarget);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                    event.preventDefault();
-                    if (message.trim()) beginFromLanding();
-                  }
-                }}
-                spellCheck={false}
-              />
-              <div className="composerControls">
-                <div className="leftComposerTools">
-                  <button type="button" title="Attach file" aria-label="Attach file" onClick={openFilePicker}>
-                    <Paperclip size={18} />
-                  </button>
-                </div>
-                <div className="rightComposerTools">
-                  <a className="composerModelTag" href="/connections" title="Choose a model connection">{activeConnection ? safeConnectionLabel(activeConnection) : `Trion ${MODEL_LABELS[model]}`}</a>
-                  <button
-                    className="sendOrb"
-                    type="button"
-                    disabled={!message.trim()}
-                    onClick={beginFromLanding}
-                    title="Send to Trion"
-                    aria-label="Send to Trion"
-                  >
-                    <ArrowUp size={20} />
-                  </button>
-                </div>
-              </div>
-            </div>
+          <p className="nmGateAsk">{rejectPrompt ? "What was wrong with that plan?" : "Do you want me to run this?"}</p>
+          <p className="nmGateWhy">
+            {rejectPrompt
+              ? "Pick the closest one, or write your own below. It shapes the next attempt."
+              : approvalReason || "This makes changes worth seeing first. Pick an answer, or write what you’d rather I do."}
+          </p>
 
-            <div className="landingSuggestions">
-              {LANDING_SUGGESTIONS.map((suggestion) => (
+          {!rejectPrompt && approvalPlan ? (
+            <ol className="nmGateSteps">
+              {approvalPlan.steps.map((step) => <li key={step.step_id}>{step.description}</li>)}
+            </ol>
+          ) : null}
+
+          <div className="nmGateChoices" role="radiogroup">
+            {(rejectPrompt
+              ? REJECT_REASONS.map((reason, index) => ({ id: reason.value, label: reason.label, hint: reason.hint, recommended: index === 0 }))
+              : APPROVAL_CHOICES.map((choice) => ({ ...choice, recommended: "recommended" in choice && choice.recommended }))
+            ).map((option) => {
+              const picked = gateChoice === option.id;
+              return (
                 <button
-                  className="landingSuggestion"
-                  key={suggestion}
+                  className={picked ? "nmGateChoice picked" : "nmGateChoice"}
+                  key={option.id}
                   type="button"
-                  onClick={() => {
-                    setMessage(suggestion);
-                    composerRef.current?.focus();
-                  }}
+                  role="radio"
+                  aria-checked={picked}
+                  onClick={() => setGateChoice(picked ? null : option.id)}
                 >
-                  {suggestion}
+                  <span className="nmGateTick" aria-hidden="true">{picked ? <Check size={11} /> : null}</span>
+                  <span className="nmGateChoiceBody">
+                    <strong>
+                      {option.label}
+                      {option.recommended ? <em className="nmGateTag">Recommended</em> : null}
+                    </strong>
+                    <small>{option.hint}</small>
+                  </span>
                 </button>
-              ))}
+              );
+            })}
+          </div>
+
+          <div className="nmGateFoot">
+            <span>{gateChoice ? "Ready to submit." : "Tick one, or type your own answer below."}</span>
+            <button className="nmGateSubmit" type="button" disabled={!gateChoice && !message.trim()} onClick={submitGate}>
+              Submit
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {queuedMessages.length > 0 ? (
+        <div className="nmQueued">
+          <span>{queuedMessages.length} queued — {busy ? "sending after this turn" : "sending now"}</span>
+          {queuedMessages.map((text, index) => (
+            <span className="nmQueuedChip" key={`${index}-${text.slice(0, 12)}`}>
+              <span>{text}</span>
+              <button type="button" onClick={() => removeQueued(index)} aria-label="Remove from queue"><X size={11} /></button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="nmComposer">
+        {!approvalPending && pendingQuestion ? (
+          <div className="nmGate" style={{ margin: 10, marginBottom: 0 }}>
+            <div className="nmGateHead"><MessageCircleQuestion size={14} /><span>One answer to continue</span></div>
+            <p className="nmGateAsk">{questionPrompt.prompt}</p>
+            {questionPrompt.choices.length > 0 ? (
+              <div className="nmSuggestions" style={{ justifyContent: "flex-start" }}>
+                {questionPrompt.choices.map((choice) => (
+                  <button
+                    className="nmSuggestion"
+                    key={choice}
+                    type="button"
+                    onClick={() => {
+                      setMessage(choice);
+                      requestAnimationFrame(() => composerRef.current?.focus());
+                    }}
+                  >
+                    {choice}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <textarea
+          aria-label={pendingQuestion ? "Answer Trion" : "Message Trion"}
+          placeholder={
+            gateOpen
+              ? "…or answer in your own words"
+              : busy
+                ? "Type to queue a follow-up…"
+                : pendingQuestion
+                  ? "Type your answer…"
+                  : "Message Trion…"
+          }
+          onChange={(event) => {
+            setMessage(event.target.value);
+            resizeComposer(event.currentTarget);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              if (gateOpen) submitGate();
+              else void submitMessage();
+            }
+          }}
+          ref={composerRef}
+          rows={1}
+          spellCheck={false}
+          value={message}
+        />
+
+        {attachedFiles.length > 0 ? (
+          <div className="nmAttachments">
+            {attachedFiles.map((file) => (
+              <span className="nmAttachment" key={file.name}>
+                <FileText size={12} />
+                <span>{file.name}</span>
+                <button type="button" onClick={() => removeAttachment(file.name)} aria-label={`Remove ${file.name}`}><X size={11} /></button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <input aria-label="Attach files" className="fileInputHidden" multiple onChange={(event) => void handleFilePick(event)} ref={fileInputRef} type="file" />
+
+        <div className="nmComposerRow">
+          <button className="nmComposerTool" type="button" title="Attach file" aria-label="Attach file" onClick={openFilePicker}>
+            <Paperclip size={17} />
+          </button>
+          <span className="nmComposerSpacer" />
+          <div className="nmModelMenu" ref={modelMenuRef}>
+            <button
+              className="nmModelTrigger"
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={modelMenuOpen}
+              onClick={() => setModelMenuOpen((open) => !open)}
+            >
+              <Sparkles size={13} />
+              <span>{activeConnection ? safeConnectionLabel(activeConnection) : `Trion ${MODEL_LABELS[model]}`}</span>
+              <ChevronDown size={12} />
+            </button>
+            <div className={`nmModelPopover${modelMenuOpen ? " open" : ""}`} role="menu" aria-label="Model" aria-hidden={!modelMenuOpen}>
+              {activeConnection ? (
+                <a className="nmModelOption" href="/connections">
+                  <span><strong>Connected model</strong><small>{activeConnection.model}</small></span>
+                  <Check size={14} />
+                </a>
+              ) : null}
+              {MODEL_TIERS.map((tier) => {
+                const available = availableModels.includes(tier);
+                return (
+                  <button
+                    className="nmModelOption"
+                    disabled={!available}
+                    key={tier}
+                    role="menuitem"
+                    type="button"
+                    tabIndex={modelMenuOpen ? 0 : -1}
+                    onClick={() => { setModel(tier); setModelMenuOpen(false); }}
+                  >
+                    <span><strong>Trion {MODEL_LABELS[tier]}</strong><small>{available ? "Available in this build" : "Not configured"}</small></span>
+                    {model === tier ? <Check size={14} /> : null}
+                  </button>
+                );
+              })}
+              <a className="nmModelLink" href="/connections">Connect or manage your own model</a>
+            </div>
+          </div>
+          {busy ? (
+            <button className="nmSend stop" onClick={stopTurn} type="button" title="Stop" aria-label="Stop the current turn">
+              <span className="nmStopSquare" />
+            </button>
+          ) : (
+            <button className="nmSend" disabled={!message.trim() || gateOpen} onClick={submitMessage} type="button" title="Send (Enter)" aria-label="Send">
+              <ArrowUp size={18} />
+            </button>
+          )}
+        </div>
+      </div>
+      {busy && slowNotice ? (
+        <p className="nmComposerHint" role="status">Still working — this can take up to a minute on the shared service.</p>
+      ) : null}
+    </>
+  );
+
+  return (
+    <main className={`nmShell${sidebarCollapsed ? " collapsed" : ""}`}>
+      {allowanceExhausted ? (
+        <section className="allowanceModal" role="dialog" aria-modal="true" aria-labelledby="allowance-title">
+          <div className="allowanceCard">
+            <NominMark size={44} title="Nomin" />
+            <p>Building paused</p>
+            <h2 id="allowance-title">You’ve reached your included building allowance.</h2>
+            <span>It will become available again when your connected plan resets. If you do not want to wait, connect your own model and continue this saved build from the next unfinished step.</span>
+            <div>
+              <a href="/connections">Connect your own model</a>
+              <button type="button" onClick={() => setAllowanceDismissed(true)}>Not now</button>
             </div>
           </div>
         </section>
-      ) : (
-      <>
-      <aside className={`zenSidebar${sidebarCollapsed ? " collapsed" : ""}`}>
-        <div className="sidebarCaustic" aria-hidden="true" />
-        <div className="studioBrand">
-          <div className="brandGlyph"><JellyfishMark size={54} /></div>
-          <div>
-            <h1 className="nominWordmark">Nomin</h1>
-            <p>Coding agent</p>
-          </div>
-          <button className="sidebarCollapse" type="button" onClick={() => { setSidebarCollapsed(true); localStorage.setItem("nomin-sidebar-collapsed", "1"); }} title="Collapse sidebar" aria-label="Collapse sidebar"><PanelLeftClose size={17} /></button>
+      ) : null}
+
+      {/* ONE sidebar, for every state of the app. It used to be written twice —
+          once for the landing screen and once for the workspace — which is how
+          the landing copy ended up without an active-conversation state. */}
+      <aside className="nmSidebar" aria-label="Conversations">
+        <div className="nmSidebarHead">
+          <span className="nmBrand"><NominMark size={26} title="Nomin" /><span className="nominWordmark">Nomin</span></span>
+          <button className="nmIconButton" type="button" onClick={() => collapseSidebar(true)} title="Close sidebar" aria-label="Close sidebar">
+            <PanelLeftClose size={17} />
+          </button>
         </div>
 
-        <button className="newThreadButton" type="button" onClick={newThread} title="Start a new thread" aria-label="Start a new thread">
-          <Plus size={18} />
-          <span>New thread</span>
+        <button className="nmNewChat" type="button" onClick={newThread}>
+          <Plus size={16} />
+          <span>New chat</span>
         </button>
 
-        <nav className="primaryNav" aria-label="Primary navigation">
-          <button
-            className={!workPanelOpen && !panelOpen ? "primaryNavItem active" : "primaryNavItem"}
-            type="button"
-            aria-pressed={!workPanelOpen && !panelOpen}
-            onClick={() => { setWorkPanelOpen(false); setPanelOpen(false); }}
-          >
-            <MessageCircleQuestion size={17} />
-            <span>Agent</span>
-          </button>
-          <button
-            className={workPanelOpen ? "primaryNavItem active" : "primaryNavItem"}
-            type="button"
-            aria-pressed={workPanelOpen}
-            onClick={() => { setWorkPanelOpen(true); setPanelOpen(false); }}
-          >
-            <Code2 size={17} />
-            <span>Workspace</span>
-          </button>
-          <button
-            className={panelOpen ? "primaryNavItem active" : "primaryNavItem"}
-            type="button"
-            aria-pressed={panelOpen}
-            onClick={() => { setPanelOpen(true); setWorkPanelOpen(false); }}
-          >
-            <FileText size={17} />
-            <span>Artifacts</span>
-          </button>
-          <a className="primaryNavItem" href="/connections">
-            <Plug size={17} />
-            <span>Connections</span>
-          </a>
-        </nav>
-
-        {/* Conversations, not shortcuts. The old "Write / Code / Test / Deploy"
-            grid advertised the machinery and threw away the one thing a user
-            actually comes back for: what they were doing yesterday. */}
-        <section className="sideModule historyModule">
-          <p className="sideLabel">Conversations</p>
+        <div className="nmSidebarScroll">
+          <p className="nmSideLabel">Chats</p>
           {sessions.length === 0 ? (
-            <p className="historyEmpty">Your conversations will appear here.</p>
+            <p className="nmEmptyHistory">Your conversations appear here.</p>
           ) : (
-            <ul className="historyList">
+            <ul className="nmThreadList">
               {sessions.map((entry) => (
                 <li key={entry.id}>
                   <button
-                    className={entry.id === sessionId ? "historyItem active" : "historyItem"}
+                    className={entry.id === sessionId ? "nmThreadItem active" : "nmThreadItem"}
                     type="button"
                     onClick={() => openSession(entry.id)}
-                    title={entry.title}
+                    title={`${entry.title} · ${relativeTime(entry.updatedAt)}`}
                   >
-                    <span className="historyTitle">{entry.title}</span>
-                    <span className="historyMeta">{relativeTime(entry.updatedAt)}</span>
+                    {entry.title}
                   </button>
                   <button
-                    className="historyDelete"
+                    className="nmThreadDelete"
                     type="button"
                     onClick={(event) => deleteSession(entry.id, event)}
                     title="Delete conversation"
@@ -1815,45 +1993,52 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
               ))}
             </ul>
           )}
-        </section>
-      </aside>
-      {sidebarCollapsed ? <button className="workspaceSidebarReveal" type="button" onClick={() => { setSidebarCollapsed(false); localStorage.setItem("nomin-sidebar-collapsed", "0"); }} title="Open sidebar" aria-label="Open sidebar"><PanelLeftOpen size={18} /></button> : null}
+        </div>
 
-      <section className="zenWorkspace">
-        <header className="workspaceTopBar">
-          {/* The mark alone. The bar used to read "Nomin | Trion Execute · 1.4"
-              — a vendor name, a product name, a mode and a version number, none
-              of which is about the conversation on screen. */}
-          <div className="topBarLead">
-            <div className="topBarTitle">
-              <span className="topBarBrand"><JellyfishMark size={21} title="Nomin" /></span>
-              <span><span className="nominWordmark">Nomin</span> workspace</span>
-              <ChevronDown size={14} />
-            </div>
-          </div>
-          <div className="topBarActions">
-            <a
-              className={`capacityChip ${busy && capacity?.activity.building ? "building" : busy && capacity?.activity.planning ? "planning" : ""}`}
-              href="/capacity"
-              title={
-                busy && capacity?.activity.building
-                  ? "Building project changes"
-                  : busy && capacity?.activity.planning
-                    ? "Planning your request"
-                    : "View context and provider capacity"
-              }
-            >
-              <Gauge size={14} />
-              <span className="capacityChipContext">Context <strong>{capacity?.context ?? "Checking"}</strong></span>
-              <span className="capacityChipLimit">{capacityLabel(capacity)}</span>
-            </a>
+        <div className="nmSidebarFoot">
+          <button
+            className={workPanelOpen ? "nmNavItem active" : "nmNavItem"}
+            type="button"
+            onClick={() => { setWorkPanelOpen(true); setPanelOpen(false); }}
+          >
+            <Code2 size={16} />
+            <span>Workspace</span>
+          </button>
+          <button
+            className={panelOpen ? "nmNavItem active" : "nmNavItem"}
+            type="button"
+            onClick={() => { setPanelOpen(true); setWorkPanelOpen(false); }}
+          >
+            <FileText size={16} />
+            <span>Artifacts</span>
+          </button>
+          <a className="nmNavItem" href="/connections"><Plug size={16} /><span>Connections</span></a>
+          <a className="nmNavItem" href="/capacity"><Gauge size={16} /><span>Capacity{capacity?.context ? ` · ${capacity.context}` : ""}</span></a>
+        </div>
+      </aside>
+
+      {/* Tapping the page closes the drawer on a phone; inert on a desktop,
+          where the sidebar is part of the layout rather than over it. */}
+      <button className="nmScrim" type="button" aria-label="Close sidebar" tabIndex={-1} onClick={() => collapseSidebar(true)} />
+
+      {/* `withPanel` insets the conversation so a drawer never covers it. */}
+      <section className={`nmMain${workPanelOpen || panelOpen ? " withPanel" : ""}`}>
+        {sidebarCollapsed ? (
+          <button className="nmIconButton nmReveal" type="button" onClick={() => collapseSidebar(false)} title="Open sidebar" aria-label="Open sidebar">
+            <PanelLeftOpen size={18} />
+          </button>
+        ) : null}
+
+        <header className={`nmTopBar${topBarScrolled ? " scrolled" : ""}`}>
+          <span className="nmTopTitle" style={{ marginLeft: sidebarCollapsed ? 40 : 4 }}>
+            {conversationStarted ? currentThreadTitle : "New chat"}
+          </span>
+          <div className="nmTopActions">
             <span
-              className={`sandboxChip ${
-                executor.bootError ? "error" : executor.previewUrl ? "live" : executor.booting ? "busy" : ""
-              }`}
+              className={`nmChip ${executor.bootError ? "error" : executor.previewUrl ? "live" : executor.booting ? "busy" : ""}`}
               title={executor.bootError ?? "In-browser sandbox running your project"}
             >
-              <span className="sandboxDot" aria-hidden="true" />
+              <span className="nmDot" aria-hidden="true" />
               {executor.bootError
                 ? "Sandbox error"
                 : executor.previewUrl
@@ -1871,152 +2056,179 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
           </div>
         </header>
 
-        <div className="workspaceSplit">
+        {conversationStarted ? (
           <div
-            className="chatScroll"
+            className="nmScroll"
             ref={chatScrollRef}
             onScroll={handleThreadScroll}
-            // Clicking back into the conversation dismisses the panel — reading
-            // the thread and reading the code are different intentions. Guarded
-            // on the selection being collapsed so that dragging to select text
-            // does not count as "I'm done with the panel".
             onClick={() => {
               if (!workPanelOpen) return;
               if (!window.getSelection()?.isCollapsed) return;
               setWorkPanelOpen(false);
             }}
           >
-          <div className="threadColumn">
-            {turns.length === 0 ? (
-              <section className="heroMessage revealItem">
-                <h2>What would you like to build?</h2>
-                <p className="heroSub">Start with the outcome. Trion will work through the implementation with you.</p>
-              </section>
-            ) : null}
+            <div className="nmColumn">
+              {/* Every turn is the same row. The live one is simply the last:
+                  previously only the in-flight turn could show its trace, its
+                  status or its error, so scrolling up through a conversation
+                  showed answers with no evidence attached to them. */}
+              {turns
+                // The current turn's answer belongs to the live block below,
+                // which also carries its status, steps and errors.
+                .filter((turn) => !(submittedMessage && turn.role === "assistant" && turn.id === currentTurnSeq))
+                .map((turn) =>
+                turn.role === "user" ? (
+                  <section className="nmTurn" key={`u-${turn.id}`}>
+                    <div className="nmUser">{turn.content}</div>
+                  </section>
+                ) : (
+                  <section className="nmTurn" key={`a-${turn.id}`}>
+                    <Markdown className="nmAssistant">{turn.content}</Markdown>
+                    <div className="nmRowActions">
+                      <button className="nmRowAction" type="button" onClick={() => void copyText(turn.content, turn.id)}>
+                        {copiedTurn === turn.id ? <Check size={13} /> : <Copy size={13} />}
+                        <span>{copiedTurn === turn.id ? "Copied" : "Copy"}</span>
+                      </button>
+                    </div>
+                  </section>
+                )
+              )}
 
-            {turns.map((turn) =>
-              turn.role === "user" ? (
-                <section className="userBubble revealItem" key={`u-${turn.id}`}><p>{turn.content}</p></section>
-              ) : (
-                <section className="assistantTurn revealItem delayOne" key={`a-${turn.id}`}>
-                  <div className="assistantCopy"><Markdown className="assistantResult">{turn.content}</Markdown></div>
-                </section>
-              )
-            )}
-
-            {submittedMessage ? (
-              <>
-                <section className="assistantTurn revealItem delayTwo" aria-live="polite">
+              {submittedMessage ? (
+                <section className="nmTurn" aria-live="polite">
                   {showAgentStatus ? (
-                    <div className={`agentPhase ${agentState}`}>
-                      {agentState === "complete" ? <span className="phaseDone"><Check size={13} /></span> : agentState === "error" ? <span className="phaseError"><X size={13} /></span> : <JellyfishThinking />}
-                      <span className="phaseText" key={phase}>{phase}</span>{agentState === "working" ? <span className="thinkingDots" aria-hidden="true"><i /><i /><i /></span> : null}
+                    <div className="nmThinking" role="status">
+                      {agentState === "complete" ? (
+                        <span className="nmStatusDone"><Check size={11} /></span>
+                      ) : agentState === "error" ? (
+                        <span className="nmStatusError"><X size={11} /></span>
+                      ) : (
+                        <ThinkingMark size={17} />
+                      )}
+                      {/* The label shimmers only while work is in flight; a
+                          finished or failed turn states its outcome plainly. */}
+                      <span className={agentState === "working" ? "nmThinkingLabel" : undefined}>{phase}</span>
+                      {agentState === "working" && elapsedLabel ? (
+                        <span className="nmThinkingElapsed">{elapsedLabel}</span>
+                      ) : null}
                     </div>
                   ) : null}
 
                   {progressUpdates.length > 0 ? (
-                    <section className="progressDigest" aria-label="Work updates" aria-live="polite">
-                      <p>Work update</p>
+                    <div className="nmUpdates" aria-label="Work updates">
                       {progressUpdates.map((update) => (
                         <span key={update.id}>{update.message}</span>
                       ))}
-                    </section>
+                    </div>
                   ) : null}
 
-                  {/* ONE execution surface. There used to be two — this live
-                      panel and a second, near-identical one further down driven
-                      by the legacy `trace` events — so a running turn showed
-                      "Live execution" twice. The legacy path is gone. */}
-                  <div className="traceWrap" ref={traceRef}>
-                    {traceNodes.length > 0 ? (
-                      traceCollapsed ? (
-                        <button
-                          className="tracePill"
-                          type="button"
-                          onClick={() => setTraceCollapsed(false)}
-                          title="Show what Trion did"
-                        >
-                          <ListTree size={14} />
+                  {traceNodes.length > 0 ? (
+                    <div ref={traceRef}>
+                      {traceCollapsed ? (
+                        <button className="nmTraceToggle" type="button" onClick={() => setTraceCollapsed(false)}>
+                          <ListTree size={13} />
                           <span>{taskSummaryLabel}</span>
                           <ChevronDown size={13} />
                         </button>
                       ) : (
-                        <div className="tracePanel">
+                        <>
+                          {/* No panel around it. The tree IS the content: a
+                              border here made the execution look like an
+                              embedded widget rather than part of the turn. */}
                           <TraceTree nodes={traceNodes} />
-                          <button
-                            className="traceCollapseButton"
-                            type="button"
-                            onClick={() => setTraceCollapsed(true)}
-                          >
-                            Hide tasks
+                          <button className="nmTraceToggle" type="button" style={{ marginTop: 12 }} onClick={() => setTraceCollapsed(true)}>
+                            <ChevronDown size={13} style={{ transform: "rotate(180deg)" }} />
+                            <span>Hide steps</span>
                           </button>
-                        </div>
-                      )
-                    ) : null}
-                  </div>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
 
-                  <div className="assistantCopy">
-                    {chatReply && !turns.some((turn) => turn.id === currentTurnSeq && turn.role === "assistant") ? (
-                      <Markdown className="assistantResult">{chatReply.content}</Markdown>
-                    ) : null}
-                  </div>
+                  {/* The answer, live. `streamingText` is what the model has
+                      written so far; once the turn commits, the same text is a
+                      normal transcript row and this clears. */}
+                  {liveAnswer ? (
+                    <Markdown className={busy ? "nmAssistant streaming" : "nmAssistant"}>{liveAnswer}</Markdown>
+                  ) : null}
 
                   {error ? (
-                    <div className="errorNote" role="alert" aria-live="assertive">
+                    <div className="nmNotice error" role="alert">
                       <span>
                         {isBridgeError(error) ? (
                           <>
                             <strong>{failedTool?.toolName ? `Couldn’t complete ${failedTool.toolName.replace("_", " ")}.` : "Browser workspace unavailable."}</strong>{" "}
-                            Keep this Trion tab open so the workspace can run it, then retry.
+                            Keep this tab open so the workspace can run it, then retry.
                             {executor.bootError ? ` Details: ${executor.bootError}` : ""}
                           </>
                         ) : presentError(error)}
                       </span>
-                      {!isAllowanceFailure ? <button className="retryButton" type="button" onClick={() => void retrySubmission()}>
-                        Retry request
-                      </button> : <a className="retryButton" href="/connections">Connect your own model</a>}
-                      <button className="retryButton secondary" type="button" onClick={newThread}>
-                        Start new thread
-                      </button>
+                      {isAllowanceFailure ? (
+                        <a className="nmNoticeAction primary" href="/connections">Connect your own model</a>
+                      ) : (
+                        <button className="nmNoticeAction primary" type="button" onClick={() => void retrySubmission()}>Retry</button>
+                      )}
+                      <button className="nmNoticeAction" type="button" onClick={newThread}>New chat</button>
                     </div>
                   ) : null}
 
-                  {phase === "Stopped" && !busy && submittedMessage ? (
-                    <div className="pausedNote" role="status">
-                      <span>The build is paused. Completed workspace changes are kept.</span>
-                      <button className="continueButton" type="button" onClick={() => void retrySubmission()}>
-                        Continue build
-                      </button>
+                  {phase === "Stopped" && !busy ? (
+                    <div className="nmNotice" role="status">
+                      <span>Stopped. Everything already written to the workspace is kept.</span>
+                      <button className="nmNoticeAction primary" type="button" onClick={() => void retrySubmission()}>Continue</button>
                     </div>
                   ) : null}
 
-                  {/* Collapsed handle. When the panel is closed but this
-                      conversation has produced files, the work is still one
-                      click away rather than gone — the same affordance Claude
-                      uses for a dismissed artifact. */}
                   {!workPanelOpen && liveFiles.length > 0 && agentOutput?.status === "done" ? (
-                    <button className="workReopen" type="button" onClick={() => setWorkPanelOpen(true)}>
-                      <Code2 size={14} />
+                    <button className="nmTraceToggle" type="button" onClick={() => setWorkPanelOpen(true)}>
+                      <Code2 size={13} />
                       <span>
                         {liveFiles.length} {liveFiles.length === 1 ? "file" : "files"}
                         {executor.previewUrl ? " · preview running" : ""}
                       </span>
-                      <span className="workReopenHint">Open</span>
                     </button>
                   ) : null}
                 </section>
-              </>
-            ) : null}
+              ) : null}
+            </div>
           </div>
-        </div>
+        ) : (
+          /* The empty state is not a different page. Same shell, same composer
+             component, centred — so sending the first message moves the box
+             down rather than replacing the screen. */
+          <div className="nmWelcome">
+            <div className="nmWelcomeHead">
+              <NominMark size={56} title="Nomin" />
+              <h1>What are you building?</h1>
+              <p>Describe the outcome. Nomin plans it, builds it in a sandbox in this tab, and shows you what runs.</p>
+            </div>
+            {composer}
+            <div className="nmSuggestions">
+              {LANDING_SUGGESTIONS.map((suggestion) => (
+                <button
+                  className="nmSuggestion"
+                  key={suggestion}
+                  type="button"
+                  onClick={() => {
+                    setMessage(suggestion);
+                    requestAnimationFrame(() => {
+                      const box = composerRef.current;
+                      if (!box) return;
+                      box.focus();
+                      resizeComposer(box);
+                    });
+                  }}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {conversationStarted ? <div className="nmDock">{composer}</div> : null}
 
         <WorkPanel
-          // `workPanelOpen` is the ONLY authority. It used to be OR'd with
-          // previewRequested, which reads executor.previewUrl — and that URL
-          // outlives the turn that created it, so once any build had started a
-          // dev server the panel forced itself open on every later message,
-          // including plain conversation. The panel now opens when this turn
-          // writes a file, and otherwise only when the user asks for it.
           open={workPanelOpen}
           files={liveFiles}
           working={busy}
@@ -2035,276 +2247,11 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
           onClose={() => setPanelOpen(false)}
           previewUrl={executor.previewUrl}
         />
-      </div>
-
-      <div className="composerDock revealItem delayThree">
-          {/* The composer IS the answer bar. An approval or a clarifying
-              question takes it over in place, with the actions on the bar the
-              user's hands are already on — rather than sending them back up the
-              transcript to hunt for a card. Typing a reply also answers. */}
-          {/* THE QUESTION LIVES IN THE COMPOSER.
-              Not a floating modal beside it — the answer is given with the same
-              hands, in the same place, as everything else the user types. Three
-              exits, all present at once: tick an option, write your own answer
-              in the box below, or cancel. */}
-          {gateOpen ? (
-            <div className="composerGate" role="group" aria-label="Trion needs an answer">
-              <div className="composerGateHead">
-                <span className="composerGateKicker">
-                  {rejectPrompt ? <MessageCircleQuestion size={14} /> : <BadgeCheck size={14} />}
-                  {rejectPrompt ? "One question" : "Before I run this"}
-                </span>
-                <button
-                  className="composerGateCancel"
-                  type="button"
-                  onClick={() => {
-                    setGateChoice(null);
-                    if (rejectPrompt) dismissRejectPrompt();
-                    else dismissGate();
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-
-              <p className="composerGateAsk">
-                {rejectPrompt ? "What was wrong with that plan?" : "Do you want me to run this?"}
-              </p>
-              <p className="composerGateWhy">
-                {rejectPrompt
-                  ? "Pick the closest one, or write your own below. It shapes the next attempt."
-                  : approvalReason ||
-                    "This makes changes worth seeing first. Pick an answer, or write what you'd rather I do."}
-              </p>
-
-              {!rejectPrompt && approvalPlan ? (
-                <ol className="composerGateSteps">
-                  {approvalPlan.steps.map((step, index) => (
-                    <li key={step.step_id}>
-                      <span className="composerGateIndex">{index + 1}</span>
-                      <span>{step.description}</span>
-                    </li>
-                  ))}
-                </ol>
-              ) : null}
-
-              <div className="composerGateChoices" role="radiogroup">
-                {(rejectPrompt
-                  ? REJECT_REASONS.map((reason, index) => ({
-                      id: reason.value,
-                      label: reason.label,
-                      hint: reason.hint,
-                      recommended: index === 0,
-                    }))
-                  : APPROVAL_CHOICES.map((choice) => ({ ...choice, recommended: "recommended" in choice && choice.recommended }))
-                ).map((option) => {
-                  const picked = gateChoice === option.id;
-                  return (
-                    <button
-                      className={picked ? "composerGateChoice picked" : "composerGateChoice"}
-                      key={option.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={picked}
-                      onClick={() => setGateChoice(picked ? null : option.id)}
-                    >
-                      <span className="composerGateTick" aria-hidden="true">
-                        {picked ? <Check size={12} /> : null}
-                      </span>
-                      <span className="composerGateChoiceBody">
-                        <span className="composerGateChoiceLabel">
-                          {option.label}
-                          {option.recommended ? <em className="composerGateTag">Recommended</em> : null}
-                        </span>
-                        <span className="composerGateChoiceHint">{option.hint}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="composerGateFoot">
-                <span className="composerGateFootHint">
-                  {gateChoice ? "Ready to submit." : "Tick one, or type your own answer below."}
-                </span>
-                <button
-                  className="composerGateSubmit"
-                  type="button"
-                  disabled={!gateChoice && !message.trim()}
-                  onClick={submitGate}
-                >
-                  Submit
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {/* Held, not lost. Shown above the composer so a queued follow-up is
-              visibly waiting rather than silently pending, and removable while
-              it still hasn't been sent. */}
-          {queuedMessages.length > 0 ? (
-            <div className="queuedStrip">
-              <span className="queuedLabel">
-                {queuedMessages.length} queued — {busy ? "sending after this turn" : "sending now"}
-              </span>
-              {queuedMessages.map((text, index) => (
-                <span className="queuedChip" key={`${index}-${text.slice(0, 12)}`}>
-                  <span className="queuedChipText">{text}</span>
-                  <button
-                    className="queuedChipRemove"
-                    type="button"
-                    onClick={() => removeQueued(index)}
-                    title="Remove from queue"
-                    aria-label="Remove from queue"
-                  >
-                    <X size={11} />
-                  </button>
-                </span>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="composerShell">
-            {!approvalPending && pendingQuestion ? (
-              <div className="composerInlineQuestion">
-                <div className="composerPromptHead">
-                  <MessageCircleQuestion size={15} />
-                  <span>Trion needs one answer to continue</span>
-                </div>
-                <p className="composerPromptQuestion">{questionPrompt.prompt}</p>
-                {questionPrompt.choices.length > 0 ? (
-                  <div className="composerQuestionChoices" role="group" aria-label="Suggested answers">
-                    {questionPrompt.choices.map((choice) => {
-                      const selected = message.trim().toLowerCase() === choice.toLowerCase();
-                      return (
-                        <button
-                          aria-pressed={selected}
-                          className={selected ? "composerQuestionChoice selected" : "composerQuestionChoice"}
-                          key={choice}
-                          onClick={() => {
-                            setMessage(choice);
-                            requestAnimationFrame(() => composerRef.current?.focus());
-                          }}
-                          type="button"
-                        >
-                          {choice}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-                <span className="composerPromptHint">
-                  {questionPrompt.choices.length > 0 ? "Choose one, or write your own answer below." : "Write your answer below."}
-                </span>
-              </div>
-            ) : null}
-            <textarea
-              aria-label={pendingQuestion ? "Answer Trion" : "Ask Trion"}
-              // Never disabled. While a question is open this box IS the "tell
-              // me something yourself" option — locking it would leave ticking
-              // a box as the only way to answer, which is exactly the rigid
-              // behaviour the modal version had.
-              placeholder={
-                gateOpen
-                  ? "…or answer in your own words"
-                  : busy
-                    ? "Type to queue a follow-up…"
-                    : pendingQuestion
-                      ? "Type your answer…"
-                      : "Describe what you want built…"
-              }
-              onChange={(event) => {
-                setMessage(event.target.value);
-                resizeComposer(event.currentTarget);
-              }}
-              onKeyDown={(event) => {
-                // Enter answers the open question, sends while idle, queues
-                // while busy. Shift+Enter always inserts a newline.
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  if (gateOpen) submitGate();
-                  else void submitMessage();
-                }
-              }}
-              ref={composerRef}
-              spellCheck={false}
-              value={message}
-            />
-            {attachedFiles.length > 0 ? (
-              <div className="attachedChips">
-                {attachedFiles.map((file) => (
-                  <span className="attachedChip" key={file.name}>
-                    <FileText size={13} />
-                    <span className="attachedChipName">{file.name}</span>
-                    <button
-                      aria-label={`Remove ${file.name}`}
-                      className="attachedChipRemove"
-                      onClick={() => removeAttachment(file.name)}
-                      title="Remove attachment"
-                      type="button"
-                    >
-                      <X size={12} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            ) : null}
-            <input
-              aria-label="Attach files"
-              className="fileInputHidden"
-              multiple
-              onChange={(event) => void handleFilePick(event)}
-              ref={fileInputRef}
-              type="file"
-            />
-            <div className="composerControls">
-              <div className="leftComposerTools">
-                <button type="button" title="Attach file" aria-label="Attach file" onClick={openFilePicker}><Paperclip size={18} /></button>
-              </div>
-              <div className="rightComposerTools">
-                <div className="modelMenu" ref={modelMenuRef}>
-                  <button className="modelTrigger" type="button" aria-haspopup="menu" aria-expanded={modelMenuOpen} onClick={() => setModelMenuOpen((open) => !open)} title="Choose model"><Sparkles size={14} /><span>{activeConnection ? safeConnectionLabel(activeConnection) : `Trion ${MODEL_LABELS[model]}`}</span><ChevronDown size={13} /></button>
-                  <div className={`modelPopover${modelMenuOpen ? " open" : ""}`} role="menu" aria-label="Trion model tiers" aria-hidden={!modelMenuOpen}>
-                    {activeConnection ? <a className="modelConnectionActive" href="/connections"><span><strong>Connected model</strong><small>{activeConnection.model}</small></span><Check size={14} /></a> : null}
-                    {MODEL_TIERS.map((tier) => {
-                      const available = availableModels.includes(tier);
-                      return <button className={`modelOption${model === tier ? " active" : ""}${!available ? " unavailable" : ""}`} disabled={!available} key={tier} role="menuitem" type="button" tabIndex={modelMenuOpen ? 0 : -1} onClick={() => { setModel(tier); setModelMenuOpen(false); }}><span><strong>Trion {MODEL_LABELS[tier]}</strong><small>{available ? "Available in this build" : "Provider route not configured"}</small></span>{model === tier ? <Check size={14} /> : null}</button>;
-                    })}
-                    <a className="modelConnectionLink" href="/connections">Connect or manage your own model</a>
-                  </div>
-                </div>
-                {busy ? (
-                  <button className="sendOrb stopOrb" onClick={stopTurn} type="button" title="Stop the current turn" aria-label="Stop the current turn">
-                    <span className="stopSquare" />
-                  </button>
-                ) : (
-                  <button className="sendOrb" disabled={!message.trim() || gateOpen} onClick={submitMessage} type="button" title="Send to Trion (Enter)" aria-label="Send to Trion">
-                    <ArrowUp size={20} />
-                  </button>
-                )}
-              </div>
-              {busy && slowNotice ? (
-                <p className="slowNotice" role="status">Still working — this can take up to a minute on the shared service.</p>
-              ) : null}
-            </div>
-          </div>
-        </div>
       </section>
-      </>
-      )}
     </main>
   );
 }
 
-/** The ONE place the mark moves fully. Everywhere else it just blinks, so
- *  motion in the interface means "Trion is working" and nothing else. */
-function JellyfishThinking() {
-  return (
-    <span className="jellyThinkerShell" aria-hidden="true">
-      <JellyfishMark size={26} className="jellyThinkerSvg" motion="full" />
-    </span>
-  );
-}
 
 /** Close out the tree at the end of a turn.
  *

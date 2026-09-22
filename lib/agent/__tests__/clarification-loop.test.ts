@@ -78,14 +78,14 @@ describe("the classifier can see the question it is waiting on", () => {
   it("sends the raw message when no clarification is pending", async () => {
     modelSays("direct_answer", "greeting");
     await classifyIntent(
-      input("hi", [
+      input("explain closures in javascript", [
         { role: "user", content: "earlier thing" },
         { role: "assistant", content: "an ordinary answer" },
       ])
     );
 
     // No clarification framing wrapped around the input...
-    expect(finalUserMessage()).toBe("hi");
+    expect(finalUserMessage()).toBe("explain closures in javascript");
     // Classification is intentionally current-message-only when no question
     // is pending; conversational memory belongs to the answer/synthesis call.
     const contents = sentMessages().map((m: any) => m.content);
@@ -98,7 +98,7 @@ describe("the classifier can see the question it is waiting on", () => {
       role: i % 2 === 0 ? ("user" as const) : ("assistant" as const),
       content: `turn ${i} ${"x".repeat(200)}`,
     }));
-    await classifyIntent(input("hi", long));
+    await classifyIntent(input("explain closures in javascript", long));
 
     const sent = sentMessages();
     const historyMessages = sent.length - 2; // minus system + final user message
@@ -109,7 +109,7 @@ describe("the classifier can see the question it is waiting on", () => {
   it("ignores a stale clarifying turn that the user already answered", async () => {
     modelSays("direct_answer", "greeting");
     await classifyIntent(
-      input("hi", [
+      input("explain closures in javascript", [
         { role: "assistant", content: CLARIFYING_QUESTION, clarifying: true },
         { role: "user", content: "a clicker" },
         { role: "assistant", content: "Built it." },
@@ -117,7 +117,7 @@ describe("the classifier can see the question it is waiting on", () => {
     );
 
     // No re-framing: the question was already answered by "a clicker".
-    expect(finalUserMessage()).toBe("hi");
+    expect(finalUserMessage()).toBe("explain closures in javascript");
   });
 });
 

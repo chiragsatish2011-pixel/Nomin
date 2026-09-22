@@ -1,22 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="3 2 34 41">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Nomin">
   <defs>
-    <linearGradient id="nomin-bell" x1="8%" y1="82%" x2="91%" y2="8%">
-      <stop offset="0%" stop-color="#41207e"/>
-      <stop offset="48%" stop-color="#8562d5"/>
-      <stop offset="100%" stop-color="#54bfb5"/>
+    <linearGradient id="nomin-mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#855bfb"/>
+      <stop offset="100%" stop-color="#5b1ecf"/>
     </linearGradient>
   </defs>
-  <g fill="none" stroke="#281052" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M 4.5 16.8 C 4.5 8.5 10.5 4.1 20 4.1 C 29.5 4.1 35.5 8.5 35.5 16.8 C 35.5 22.3 32.3 25.1 28.6 22.3 C 26.1 25.1 22.9 25.3 20 22.4 C 17.1 25.3 13.9 25.1 11.4 22.3 C 7.7 25.1 4.5 22.3 4.5 16.8 Z" fill="url(#nomin-bell)" stroke-width="1.45"/>
-    <path d="M 7.4 13.3 C 9.6 8.4 15 6.6 20.4 6.8" opacity=".28" stroke="#fff" stroke-width="1.2"/>
-    <g fill="#160b32" stroke="none"><circle cx="14.2" cy="15.2" r="2.45"/><circle cx="25.8" cy="15.2" r="2.45"/></g>
-    <g fill="#fff" stroke="none"><circle cx="13.45" cy="14.38" r=".72"/><circle cx="25.05" cy="14.38" r=".72"/></g>
-    <g fill="none" stroke-width="1.15">
-      <path d="M9.8 23C8.7 27.2 11.1 29.2 9.1 33.2C7.9 35.7 8.1 38.3 9.5 40.5"/>
-      <path d="M14.8 23.6C16.2 27.3 12.6 30.1 14.4 33.7C15.8 36.4 13.3 38.7 12.8 41.2"/>
-      <path d="M20 23.5C18.3 27.3 21.9 30.5 20 34.2C18.5 37 20.4 39.2 20 42"/>
-      <path d="M25.2 23.6C23.9 27.5 27.2 30 25.5 33.9C24.2 36.8 27 38.8 27.1 41.4"/>
-      <path d="M30.2 23C31.4 26.7 28.8 29.5 30.9 33.1C32.4 35.8 31.8 38.2 30.4 40.4"/>
-    </g>
+  <rect width="32" height="32" rx="9" fill="url(#nomin-mark)"/>
+  <g stroke="#fff" stroke-width="1.7" stroke-linecap="round" opacity="0.9">
+    <path d="M16 11.5 L9.5 20.5"/>
+    <path d="M16 11.5 L22.5 20.5"/>
+    <path d="M16 11.5 L16 20.5"/>
+  </g>
+  <g fill="#fff">
+    <circle cx="16" cy="10" r="3.1"/>
+    <circle cx="9.5" cy="21.5" r="2.3"/>
+    <circle cx="16" cy="21.5" r="2.3"/>
+    <circle cx="22.5" cy="21.5" r="2.3"/>
   </g>
 </svg>
