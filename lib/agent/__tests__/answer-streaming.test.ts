@@ -56,6 +56,43 @@ describe("createStreamSanitizer", () => {
     expect(seen).toBe(chunks.join(""));
   });
 
+  it("streams text that has no spaces in it at all", () => {
+    // Chinese, Japanese and Thai are written without spaces, and so is a
+    // minified line, a base64 data URI or a long URL. Cutting only on
+    // whitespace meant NOTHING was released until the stream ended, so
+    // streaming silently turned itself off for those answers.
+    const answer = "闭包是一个函数和它被创建时所处的作用域绑定在一起的组合。返回的函数在外层函数结束之后依然可以访问那个作用域里的变量，这就是它最常见的用途。";
+    const filter = createStreamSanitizer();
+    const chunks = answer.match(/[\s\S]{1,6}/g) ?? [];
+    let shown = "";
+    const progress: number[] = [];
+    for (const chunk of chunks) {
+      shown += filter.push(chunk);
+      progress.push(shown.length);
+    }
+    // Text reached the caller DURING the stream, not only at the end.
+    expect(shown.length).toBeGreaterThan(0);
+    expect(new Set(progress).size).toBeGreaterThan(1);
+    expect(shown + filter.flush()).toBe(answer);
+  });
+
+  it("never holds back more than a banned word could span", () => {
+    const filter = createStreamSanitizer();
+    let shown = "";
+    for (let i = 0; i < 40; i++) shown += filter.push("abcdefghij");
+    // 400 characters in, at most the holdback window is still unreleased.
+    expect(400 - shown.length).toBeLessThanOrEqual(48);
+    expect(shown + filter.flush()).toBe("abcdefghij".repeat(40));
+  });
+
+  it("still catches a banned word split across chunks with no spaces around it", () => {
+    const filter = createStreamSanitizer();
+    const chunks = ["x".repeat(60), "Nemo", "tron", "y".repeat(60)];
+    const seen = chunks.map((chunk) => filter.push(chunk)).join("") + filter.flush();
+    expect(seen).not.toMatch(/nemotron/i);
+    expect(seen).toContain("Trion");
+  });
+
   it("releases everything it held once the stream ends", () => {
     const filter = createStreamSanitizer();
     const seen = filter.push("one") + filter.flush();

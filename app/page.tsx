@@ -2021,7 +2021,8 @@ const chatReply = [...outputs].reverse().find((output): output is Extract<Legacy
           where the sidebar is part of the layout rather than over it. */}
       <button className="nmScrim" type="button" aria-label="Close sidebar" tabIndex={-1} onClick={() => collapseSidebar(true)} />
 
-      <section className="nmMain">
+      {/* `withPanel` insets the conversation so a drawer never covers it. */}
+      <section className={`nmMain${workPanelOpen || panelOpen ? " withPanel" : ""}`}>
         {sidebarCollapsed ? (
           <button className="nmIconButton nmReveal" type="button" onClick={() => collapseSidebar(false)} title="Open sidebar" aria-label="Open sidebar">
             <PanelLeftOpen size={18} />

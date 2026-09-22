@@ -237,6 +237,14 @@ export function assertNoLeaksInOutput(output: {
  *
  * Returns a `push` for each chunk and a `flush` for the end of the stream.
  */
+/**
+ * The longest banned pattern is `nvidia/nemotron-3-ultra-550b-a55b` at 33
+ * characters. Holding back more than that is always safe, whatever the text
+ * looks like, so this is the fallback boundary for text that has no
+ * whitespace to find one in.
+ */
+const STREAM_HOLDBACK_CHARS = 48;
+
 export function createStreamSanitizer(): { push: (chunk: string) => string; flush: () => string } {
   let held = "";
   return {
@@ -244,7 +252,18 @@ export function createStreamSanitizer(): { push: (chunk: string) => string; flus
       held += chunk;
       // Keep the last two tokens (and the whitespace between them) back.
       const boundary = held.search(/\s\S*\s\S*$/);
-      if (boundary < 0) return "";
+      if (boundary < 0) {
+        // No whitespace to cut on. That is not an edge case: Chinese, Japanese
+        // and Thai are written without spaces, and so is a minified line, a
+        // base64 data URI or a long URL. Waiting for a space meant NOTHING was
+        // emitted until the stream ended — streaming silently turned itself off
+        // for those answers. Cut on a character count instead, which is safe
+        // because it still holds back more than the longest banned pattern.
+        if (held.length <= STREAM_HOLDBACK_CHARS) return "";
+        const release = held.slice(0, held.length - STREAM_HOLDBACK_CHARS);
+        held = held.slice(held.length - STREAM_HOLDBACK_CHARS);
+        return sanitize(release);
+      }
       const release = held.slice(0, boundary);
       held = held.slice(boundary);
       return sanitize(release);

@@ -1409,3 +1409,79 @@
   .nmThinkArcInner { stroke-dasharray: none; }
   .nmThinkingLabel { color: var(--primary); }
 }
+
+/* ===========================================================================
+ * Side panels in the chat shell.
+ *
+ * WorkPanel and ArtifactPanel were written as flex siblings of the thread, for
+ * a layout where the main area was a horizontal split. The shell's main area is
+ * a COLUMN now (top bar, thread, composer), so `flex: 0 0 clamp(...)` made the
+ * code panel a full-width block stacked underneath the composer rather than a
+ * panel beside the conversation. Measured: x=264 width=1176 in a 1176px-wide
+ * main area, sitting below the fold.
+ *
+ * They are drawers here: pinned to the right of the main area, with the
+ * conversation and composer inset by the same width so nothing hides behind
+ * them. Both components return null when closed, so being in the DOM is what
+ * "open" means — which is also why the visibility is unconditional below.
+ * `.artifactPanel` has always carried `opacity: 0; pointer-events: none` in its
+ * base rule, with a `.artifactPanel.open` variant that NOTHING has ever added,
+ * so the Artifacts panel could not be seen at all.
+ * ======================================================================== */
+
+.nmMain > .workPanel,
+.nmMain > .artifactPanel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  width: clamp(360px, 42%, 680px);
+  flex: none;
+  opacity: 1;
+  pointer-events: auto;
+  border-left: 1px solid var(--kraken-border);
+  background: var(--ocean-navy);
+  box-shadow: -1px 0 0 0 var(--kraken-border);
+  animation: nmPanelIn 260ms var(--calm-ease) both;
+}
+
+@keyframes nmPanelIn {
+  from { opacity: 0; transform: translateX(18px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The conversation keeps its own centred column; it is the AREA that narrows,
+   so the text re-centres in what is left rather than sliding under the panel. */
+.nmMain.withPanel .nmScroll,
+.nmMain.withPanel .nmDock,
+.nmMain.withPanel .nmWelcome,
+.nmMain.withPanel .nmTopBar {
+  padding-right: clamp(360px, 42%, 680px);
+  transition: padding-right 260ms var(--calm-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nmMain > .workPanel,
+  .nmMain > .artifactPanel { animation: none; }
+  .nmMain.withPanel .nmScroll,
+  .nmMain.withPanel .nmDock,
+  .nmMain.withPanel .nmWelcome,
+  .nmMain.withPanel .nmTopBar { transition: none; }
+}
+
+/* On a phone there is no room beside anything: the panel takes the screen. */
+@media (max-width: 860px) {
+  .nmMain > .workPanel,
+  .nmMain > .artifactPanel {
+    width: 100%;
+    border-left: none;
+  }
+
+  .nmMain.withPanel .nmScroll,
+  .nmMain.withPanel .nmDock,
+  .nmMain.withPanel .nmWelcome,
+  .nmMain.withPanel .nmTopBar {
+    padding-right: 16px;
+  }
+}

@@ -40,6 +40,19 @@ function errorResponse(status: number): Response {
   } as unknown as Response;
 }
 
+/** A rate-limited hosted response. The 1ms retry-after is what lets a test
+ *  accumulate the consecutive 429s the breaker opens on without sleeping. */
+function rateLimitedResponse(): Response {
+  const headers: Record<string, string> = { "retry-after-ms": "1" };
+  return {
+    ok: false,
+    status: 429,
+    headers: { forEach: (fn: (v: string, k: string) => void) => Object.entries(headers).forEach(([k, v]) => fn(v, k)) },
+    json: async () => ({}),
+    text: async () => "rate limited",
+  } as unknown as Response;
+}
+
 /** The shape a dead port produces: fetch rejects before any response. */
 function refused(): Promise<Response> {
   return Promise.reject(Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:11434"), { cause: { code: "ECONNREFUSED" } }));
@@ -319,6 +332,38 @@ describe("a dead local server is not retried in front of every call", () => {
     healthy = true;
     await expect(queuedTextCompletion([{ role: "user", content: "hi" }], 64, {})).resolves.toBe("local answer");
     expect(localLaneSnapshot().consecutiveFailures).toBe(0);
+  });
+});
+
+describe("the hosted circuit breaker does not gate the local lane", () => {
+  it("serves locally while the hosted endpoint is in its cooling-off window", async () => {
+    // Trip the breaker the way real life does: repeated hosted failures. The
+    // lane ordering check in the pump used to run AFTER the breaker check, so a
+    // tripped internet lane rejected calls a model on this machine was about to
+    // serve — the exact moment local matters most.
+    let localUp = false;
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+      if (String(url).includes("127.0.0.1")) {
+        if (!localUp) return refused();
+        return okResponse("local answer");
+      }
+      return rateLimitedResponse();
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const { queuedTextCompletion, getCircuitState } = await import("../internal-client");
+
+    // The breaker opens on consecutive rate limits from the hosted endpoint.
+    for (let i = 0; i < 8 && getCircuitState() !== "open"; i++) {
+      await queuedTextCompletion([{ role: "user", content: "hi" }], 64, { maxAttempts: 1 }).catch(() => {});
+    }
+    expect(getCircuitState()).toBe("open");
+
+    // The local server comes back. The breaker is still open, and that must not
+    // matter: it describes the hosted endpoint, not this machine.
+    const { resetLocalLaneHealth } = await import("../local-lane");
+    resetLocalLaneHealth();
+    localUp = true;
+    await expect(queuedTextCompletion([{ role: "user", content: "hi" }], 64, {})).resolves.toBe("local answer");
   });
 });
 

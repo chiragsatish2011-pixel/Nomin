@@ -404,22 +404,28 @@ async function pump(): Promise<void> {
         continue;
       }
 
-      // Reject while the breaker is open BEFORE consulting or charging the
-      // local budget. A breaker rejection never crossed the network, so
-      // recording it as an admitted request creates phantom saturation and
-      // delays the first healthy request after recovery.
-      const breaker = task.byok ? null : hostedCircuitBreaker;
-      if (breaker?.isOpen()) {
-        settleTask(task, { ok: false, error: new Error("Trion is briefly pausing requests after repeated upstream failures. Try again in a moment.") });
-        continue;
-      }
-
       const usingByok = Boolean(task.byok);
       // A model on this machine has no shared quota to protect and no cost per
       // request, so it takes neither a credential lease nor a slot of the
       // hosted RPM budget. It is also the reason a deployment with NO hosted
       // key at all is still a working install.
       const usingLocal = !usingByok && !task.forceHosted && localLaneReady();
+
+      // Reject while the breaker is open BEFORE consulting or charging the
+      // local budget. A breaker rejection never crossed the network, so
+      // recording it as an admitted request creates phantom saturation and
+      // delays the first healthy request after recovery.
+      //
+      // The breaker describes THE HOSTED ENDPOINT. Deciding this before
+      // choosing a lane is how a tripped internet lane came to reject calls a
+      // model on this machine was about to serve — the exact moment local is
+      // most useful. A local call skips it, the same way dispatch does.
+      const breaker = usingByok || usingLocal ? null : hostedCircuitBreaker;
+      if (breaker?.isOpen()) {
+        settleTask(task, { ok: false, error: new Error("Trion is briefly pausing requests after repeated upstream failures. Try again in a moment.") });
+        continue;
+      }
+
       let lease: KeyLease | null = null;
       if (!usingByok && !usingLocal) {
         // One credential: there is nothing to choose between. Either the lane
