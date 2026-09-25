@@ -1,0 +1,29 @@
+{
+  "name": "nomin-code",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Nomin Code — an autonomous engineering workspace. Trion 1.5, powered by NVIDIA Nemotron 3 Ultra 550B A55B.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@webcontainer/api": "^1.6.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true
+  }
+}

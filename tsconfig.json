@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "types": ["node"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@nomin/work-tree": ["src/work-tree/index.ts"],
+      "@nomin/work-tree/react": ["src/work-tree/react/index.tsx"],
+      "@nomin/model": ["src/model/index.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}
