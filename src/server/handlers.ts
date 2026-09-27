@@ -98,6 +98,7 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse): Pro
     // Without this a proxy will buffer the whole turn and deliver it at the end.
     "X-Accel-Buffering": "no",
   });
+  if (res.flushHeaders) res.flushHeaders();
 
   try {
     for await (const frame of runTurn({
