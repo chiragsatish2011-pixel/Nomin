@@ -26,8 +26,7 @@ export function Mark({
       aria-label="Nomin"
       role="img"
     >
-      <img className="mark-light" src="/logo-mark-black.png" alt="" aria-hidden="true" draggable={false} />
-      <img className="mark-dark" src="/logo-mark.png" alt="" aria-hidden="true" draggable={false} />
+      <img className="mark-img" src="/logo-mark.png" alt="" aria-hidden="true" draggable={false} />
     </span>
   );
 }
@@ -41,8 +40,7 @@ export function Mark({
 export function MarkWatermark({ size = 380 }: { size?: number }) {
   return (
     <div className="mark-watermark" style={{ width: size, height: size }} aria-hidden="true">
-      <img className="mark-light" src="/logo-mark-black.png" alt="" draggable={false} />
-      <img className="mark-dark" src="/logo-mark.png" alt="" draggable={false} />
+      <img className="mark-img" src="/logo-mark.png" alt="" draggable={false} />
     </div>
   );
 }

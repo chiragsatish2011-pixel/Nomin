@@ -946,9 +946,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: contain; user-select: none;
 }
-.mark .mark-dark { display: none; }
-:root[data-theme="dark"] .mark .mark-light { display: none; }
-:root[data-theme="dark"] .mark .mark-dark { display: block; }
+:root:not([data-theme="dark"]) .mark .mark-img { filter: invert(1); }
 /* Live: the mark glows rather than gaining a box. */
 .mark.busy { animation: mark-live 2.2s ease-in-out infinite; }
 @keyframes mark-live {
@@ -1185,9 +1183,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
   user-select: none;
 }
 :root[data-theme="dark"] .mark-watermark img { opacity: 0.09; }
-.mark-watermark .mark-dark { display: none; }
-:root[data-theme="dark"] .mark-watermark .mark-light { display: none; }
-:root[data-theme="dark"] .mark-watermark .mark-dark { display: block; }
+:root:not([data-theme="dark"]) .mark-watermark .mark-img { filter: invert(1); }
 
 /* The welcome column becomes the positioning context for the watermark, and
    everything in it sits above it. */
