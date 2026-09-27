@@ -87,7 +87,7 @@ export const TRION_1_5: ModelDescriptor = {
   status: "available",
   backend: backendOf("NOMIN_WORKER_MODEL"),
   provider: "nvidia",
-  endpoint: endpointOf(),
+  endpoint: endpointOf("https://integrate.api.nvidia.com/v1"),
   apiKeyEnv: "NVIDIA_API_KEY",
   contextTokens: 128_000,
   maxOutputTokens: 8192,
