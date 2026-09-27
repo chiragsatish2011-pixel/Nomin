@@ -1,7 +1,7 @@
 /**
  * The Nomin mark — the official logo file, and nothing around it.
  *
- * `public/logo-mark.png` is the supplied artwork with its transparent padding
+ * `public/logo-mark.png?v=atom` is the supplied artwork with its transparent padding
  * trimmed and re-centred: every pixel of the glyph is the original file's.
  * There is no tile, plate or placeholder behind it.
  *
@@ -26,7 +26,7 @@ export function Mark({
       aria-label="Nomin"
       role="img"
     >
-      <img className="mark-img" src="/logo-mark.png" alt="" aria-hidden="true" draggable={false} />
+      <img className="mark-img" src="/logo-mark.png?v=atom" alt="" aria-hidden="true" draggable={false} />
     </span>
   );
 }
@@ -40,7 +40,7 @@ export function Mark({
 export function MarkWatermark({ size = 380 }: { size?: number }) {
   return (
     <div className="mark-watermark" style={{ width: size, height: size }} aria-hidden="true">
-      <img className="mark-img" src="/logo-mark.png" alt="" draggable={false} />
+      <img className="mark-img" src="/logo-mark.png?v=atom" alt="" draggable={false} />
     </div>
   );
 }
