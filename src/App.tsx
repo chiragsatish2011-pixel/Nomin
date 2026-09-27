@@ -48,6 +48,7 @@ export default function App() {
   const [attachments, setAttachments] = useState<PreparedAttachment[]>([]);
   const [attaching, setAttaching] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [apiModalOpen, setApiModalOpen] = useState(false);
   const [conversation, setConversation] = useState(false);
   const spokenFor = useRef<number>(-1);
   const micRef = useRef<{ stop: () => void; abort: () => void } | null>(null);
@@ -572,7 +573,29 @@ export default function App() {
         </div>
       </header>
 
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} />
+            <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} />
+
+      {apiModalOpen && (
+        <div className="modal-scrim" onClick={() => setApiModalOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Nomin API Access</h3>
+              <button className="modal-close" onClick={() => setApiModalOpen(false)}>?</button>
+            </div>
+            <div className="modal-body">
+              <p>Build autonomous coding agents into your own products.</p>
+              <br/>
+              <p>The Nomin API allows you to send prompts programmatically and receive fully coded workspaces back.</p>
+              <br/>
+              <p><strong>Endpoint:</strong> <code>POST /api/v1/generate</code></p>
+              <p><strong>Headers:</strong> <code>Authorization: Bearer &lt;API_KEY&gt;</code></p>
+              <br/>
+              <p>API Keys are currently invite-only.</p>
+              <a href="mailto:admin@nomin.ai?subject=API Access Request" className="primary-btn" style={{display: 'inline-block', marginTop: 15, textDecoration: 'none'}}>Request API Key via Email</a>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="frame">
         {/* On a narrow screen the rail is a drawer over the stage, so it needs
@@ -659,6 +682,16 @@ export default function App() {
           <div className="rail-foot">
             <span className="rail-caption">Running on</span>
             <p className="rail-note">Nomin infrastructure</p>
+          </div>
+                  <div className="rail-section">
+            <span className="rail-caption">Developers</span>
+            <ul className="session-list">
+              <li>
+                <button className="session" onClick={() => setApiModalOpen(true)}>
+                  API Access
+                </button>
+              </li>
+            </ul>
           </div>
         </nav>
 

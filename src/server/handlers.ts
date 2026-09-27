@@ -295,3 +295,60 @@ export function handleHealth(_req: IncomingMessage, res: ServerResponse): void {
     },
   });
 }
+/**
+ * POST /api/v1/generate - Custom API for external users.
+ * Requires Authorization: Bearer <API_KEY>.
+ */
+export async function handleApiGenerate(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (req.method !== "POST") {
+    json(res, 405, { error: "Method not allowed" });
+    return;
+  }
+
+  const auth = req.headers.authorization;
+  const keys = (process.env.NOMIN_API_KEYS || "master-key-123").split(",").map(k => k.trim());
+  
+  if (!auth || !auth.startsWith("Bearer ") || !keys.includes(auth.slice(7).trim())) {
+    json(res, 401, { error: "Unauthorized. Please email admin@nomin.ai to request an API key." });
+    return;
+  }
+
+  const body = await readJson(req);
+  if (!body.prompt) {
+    json(res, 400, { error: "Missing 'prompt' in request body." });
+    return;
+  }
+
+  const controller = new AbortController();
+  
+  // We don't stream for the REST API by default to make it easy for consumers,
+  // we just collect the final files and return them as JSON.
+  try {
+    const finalFiles: Record<string, string> = {};
+    const messages = [{ role: "user", content: body.prompt }];
+    
+    for await (const frame of runTurn({
+      messages,
+      title: "API Generation",
+      model: body.model || "core",
+      mode: "balanced",
+      sessionId: "api-" + Date.now(),
+      plan: null,
+      files: [],
+      signal: controller.signal,
+    })) {
+      // Accumulate files if the frame provides them
+      if (frame.kind === "files" && frame.files) {
+        for (const file of frame.files) {
+          if (file.content) {
+            finalFiles[file.path] = file.content;
+          }
+        }
+      }
+    }
+    
+    json(res, 200, { success: true, files: finalFiles });
+  } catch (error) {
+    json(res, 500, { error: error instanceof Error ? error.message : "Generation failed." });
+  }
+}
