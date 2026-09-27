@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { WorkTreeView } from "@nomin/work-tree/react";
-import { krakenAurora, krakenDark, type AgentEvent } from "@nomin/work-tree";
+import type { AgentEvent } from "@nomin/work-tree";
 import { ParticleOrb } from "./ParticleOrb.js";
 import { currentPhase } from "./Pipeline.js";
 import { ThinkingSteps } from "./ThinkingSteps.js";
