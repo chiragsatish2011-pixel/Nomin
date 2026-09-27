@@ -26,6 +26,8 @@ interface Step {
   at?: number;
   endedAt?: number;
   children: Step[];
+  /** How many identical rows this one stands for. */
+  repeats?: number;
 }
 
 const OPENS = /\.started$/;
@@ -135,7 +137,44 @@ export function toSteps(events: AgentEvent[]): Step[] {
     if (event.id) byId.set(event.id, step);
   });
 
-  return roots;
+  return collapse(roots);
+}
+
+/**
+ * Fold consecutive identical rows into one.
+ *
+ * Every pass at the model opens and closes a thinking row, so a build that
+ * took five rounds left five "Thought through it" lines in a column — which
+ * reads as a stutter rather than as work. They become one row that says how
+ * many, keeping the evidence of each behind it.
+ */
+function collapse(steps: Step[]): Step[] {
+  const out: Step[] = [];
+  for (const step of steps) {
+    const previous = out[out.length - 1];
+    const same =
+      previous &&
+      previous.kind === step.kind &&
+      previous.label === step.label &&
+      !previous.children.length &&
+      !step.children.length;
+
+    if (same) {
+      previous.repeats = (previous.repeats ?? 1) + 1;
+      // Keep the first piece of evidence; the rest are the same shape.
+      if (!previous.body && step.body) {
+        previous.body = step.body;
+        previous.bodyKind = step.bodyKind;
+        previous.bodyTitle = step.bodyTitle;
+      }
+      previous.endedAt = step.endedAt ?? previous.endedAt;
+      if (step.state === "failed") previous.state = "failed";
+      continue;
+    }
+
+    out.push({ ...step, children: collapse(step.children) });
+  }
+  return out;
 }
 
 export function ThinkingSteps({ events }: { events: AgentEvent[] }) {
@@ -188,6 +227,9 @@ function StepRow({ step, depth }: { step: Step; depth: number }) {
           ) : (
             <span className="step-label">{step.label}</span>
           )}
+          {step.repeats && step.repeats > 1 ? (
+            <span className="step-count">×{step.repeats}</span>
+          ) : null}
           {step.detail && <span className="step-detail">{step.detail}</span>}
           {took && <span className="step-took">{took}</span>}
           {hasChildren && !open && (

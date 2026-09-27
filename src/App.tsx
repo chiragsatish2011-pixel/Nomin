@@ -37,13 +37,6 @@ function slug(text: string): string {
   return cleaned || "nomin";
 }
 
-const STARTERS = [
-  "Build a landing page for a coffee shop",
-  "Make a dashboard with three charts",
-  "Write a small REST API",
-  "Explain this project's architecture",
-];
-
 export default function App() {
   // Resolved once from storage, then the OS — so a hard refresh keeps it.
   const [theme, setTheme] = useState<Theme>(readTheme);
@@ -62,6 +55,16 @@ export default function App() {
   // on purpose: an agent that cannot fix something must not retry for ever.
   const repairs = useRef<{ turn: number; consecutive: number }>({ turn: -1, consecutive: 0 });
   const [canvasPinnedShut, setCanvasPinnedShut] = useState(false);
+  /**
+   * The side panel.
+   *
+   * Open on a screen with room for it, shut on one without — a drawer that
+   * starts over the conversation on a phone is in the way before it is useful.
+   * From then on it is the user's choice, at every width.
+   */
+  const [railOpen, setRailOpen] = useState(
+    () => typeof window === "undefined" || window.innerWidth > 900,
+  );
   const {
     messages,
     running,
@@ -106,6 +109,9 @@ export default function App() {
         setPaletteOpen((open) => !open);
       } else if (event.key === "Escape" && !typing) {
         setPaletteOpen(false);
+        // Escape dismisses the drawer, but only where it is a drawer — on a
+        // wide screen the panel is part of the layout and should stay put.
+        if (window.innerWidth <= 900) setRailOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -230,6 +236,24 @@ export default function App() {
       download(createZip(files), `${slug(build.title || build.entry)}.zip`);
     },
     [workspace.builds, workspace.files],
+  );
+
+  /** On a narrow screen the drawer has done its job once something is picked. */
+  const dismissRail = useCallback(() => {
+    if (typeof window !== "undefined" && window.innerWidth <= 900) setRailOpen(false);
+  }, []);
+
+  const startSession = useCallback(() => {
+    reset();
+    dismissRail();
+  }, [dismissRail, reset]);
+
+  const pickSession = useCallback(
+    (id: string) => {
+      void openSession(id);
+      dismissRail();
+    },
+    [dismissRail, openSession],
   );
 
   /** Show one build, and nothing else, in the canvas. */
@@ -488,10 +512,24 @@ export default function App() {
 
 
   return (
-    <div className={`workspace${canvasOpen ? " with-canvas" : ""}`}>
+    <div
+      className={`workspace${canvasOpen ? " with-canvas" : ""}${railOpen ? " rail-open" : " rail-shut"}`}
+    >
       <header className="taskbar">
+        <button
+          className="rail-toggle"
+          onClick={() => setRailOpen((open) => !open)}
+          aria-expanded={railOpen}
+          aria-controls="nomin-rail"
+          title={railOpen ? "Hide the side panel" : "Show the side panel"}
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round">
+            <path d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+
         <div className="brand">
-          <Mark size={34} busy={running} />
+          <Mark size={30} busy={running} />
           <span className="brand-name">Nomin Code</span>
         </div>
 
@@ -527,8 +565,16 @@ export default function App() {
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} />
 
       <div className="frame">
-        <nav className="rail">
-          <button className="new-task" onClick={reset}>
+        {/* On a narrow screen the rail is a drawer over the stage, so it needs
+            something to dismiss it that is not the toggle in the bar. */}
+        <button
+          className="rail-scrim"
+          aria-label="Close the side panel"
+          tabIndex={railOpen ? 0 : -1}
+          onClick={() => setRailOpen(false)}
+        />
+        <nav className="rail" id="nomin-rail" aria-hidden={!railOpen}>
+          <button className="new-task" onClick={startSession}>
             <span>+</span> New session
           </button>
 
@@ -543,7 +589,7 @@ export default function App() {
                   <li key={item.id}>
                     <button
                       className={`session${item.id === sessionId ? " on" : ""}`}
-                      onClick={() => void openSession(item.id)}
+                      onClick={() => void pickSession(item.id)}
                       disabled={running}
                     >
                       {item.title}
@@ -635,7 +681,7 @@ export default function App() {
               onDownloadBuild={downloadBuild}
             />
           ) : (
-            <Welcome running={running} pick={setDraft} />
+            <Welcome running={running} />
           )}
 
           <div className={`composer-dock${started ? "" : " centred"}`}>
@@ -684,28 +730,19 @@ export default function App() {
   );
 }
 
-function Welcome({ running, pick }: { running: boolean; pick: (text: string) => void }) {
+function Welcome({ running }: { running: boolean }) {
   return (
     <div className="welcome">
       {/* The mark sits behind the heading as a watermark rather than beside it:
           large enough to be the page's identity, faint enough that the question
           is still the first thing read. It is the same file, only scaled and
           faded — nothing about the artwork changes. */}
-      <MarkWatermark size={380} />
+      <MarkWatermark size={440} />
       <h1>What are we building?</h1>
       <p>
         Describe the outcome. Nomin Code asks what it needs, plans it for your approval, then builds,
         tests and verifies the work — and keeps going through rate limits.
       </p>
-      <ul className="starters">
-        {STARTERS.map((text) => (
-          <li key={text}>
-            <button onClick={() => pick(text)} disabled={running}>
-              {text}
-            </button>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

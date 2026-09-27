@@ -162,9 +162,18 @@ export async function* runTurn(options: TurnOptions): AsyncGenerator<TurnFrame> 
     // streamed: the user asks for it by clicking, rather than reading the
     // model's working-out scroll past mid-turn.
     let reasoning = "";
-    yield tree({ type: "thinking.started", id: `thinking-${pass}`, parent: "task", label: "Thinking" });
-
     const useTools = executing && !withoutTools;
+    // A tool round is one unstreamed call, so nothing at all comes back for a
+    // minute or more. Saying what it is doing, and that the wait is expected,
+    // is the difference between a live tree and a screen that looks stuck.
+    yield tree({
+      type: "thinking.started",
+      id: `thinking-${pass}`,
+      parent: "task",
+      label: useTools ? "Writing the files" : "Thinking",
+      detail: useTools ? "the whole file arrives at once" : undefined,
+    });
+
     const stream = provider.stream({
       messages,
       tools: useTools ? TOOLS : undefined,

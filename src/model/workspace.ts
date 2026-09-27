@@ -57,7 +57,7 @@ const MAX_OUTPUT = 8000;
 const COMMAND_TIMEOUT_MS = 120_000;
 
 /** The only executables a model may name. No shell, no interpreters of choice. */
-const ALLOWED_COMMANDS = new Set(["npm", "npx", "node", "tsc", "vite"]);
+const ALLOWED_COMMANDS = new Set(["npm", "npx", "node", "tsc", "vite", "python", "python3"]);
 
 /** Subcommands that destroy work or reach outward. They need a human. */
 const REFUSED_ARGS = [/^--?f(orce)?$/i, /^publish$/i, /^deploy$/i, /^login$/i, /^token$/i];
@@ -77,6 +77,7 @@ const SERVERS = [
   /^http-server$/i,
   /^live-server$/i,
   /^serve-handler$/i,
+  /^http\.server$/i,
   /^--watch$/i,
   /^-w$/i,
 ];

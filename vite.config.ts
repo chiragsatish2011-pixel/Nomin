@@ -31,16 +31,33 @@ function agentApi(env: Record<string, string>): Plugin {
       const routes = ["chat", "review", "vision", "evidence", "files", "health"] as const;
       for (const route of routes) {
         server.middlewares.use(`/api/${route}`, async (req: IncomingMessage, res: ServerResponse) => {
-          const handlers = (await server.ssrLoadModule(handlersEntry)) as typeof import("./src/server/handlers.js");
-          const handler = {
-            chat: handlers.handleChat,
-            review: handlers.handleReview,
-            vision: handlers.handleVision,
-            evidence: handlers.handleEvidence,
-            files: handlers.handleFiles,
-            health: handlers.handleHealth,
-          }[route];
-          await handler(req, res);
+          // A syntax error anywhere under `handlers` used to reject here with
+          // nobody listening, and an unhandled rejection takes the dev server
+          // down with it — so one bad character meant restarting the server
+          // rather than saving the file again. It is reported to the caller
+          // instead, and the next request picks up the fixed module.
+          try {
+            const handlers = (await server.ssrLoadModule(
+              handlersEntry,
+            )) as typeof import("./src/server/handlers.js");
+            const handler = {
+              chat: handlers.handleChat,
+              review: handlers.handleReview,
+              vision: handlers.handleVision,
+              evidence: handlers.handleEvidence,
+              files: handlers.handleFiles,
+              health: handlers.handleHealth,
+            }[route];
+            await handler(req, res);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "The handler failed to load.";
+            server.config.logger.error(`[nomin] /api/${route}: ${message}`);
+            if (!res.writableEnded) {
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: message.slice(0, 500) }));
+            }
+          }
         });
       }
     },

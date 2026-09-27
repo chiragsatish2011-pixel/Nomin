@@ -131,6 +131,38 @@ Use CSS gradients and colour blocks for imagery rather than hotlinked photograph
 ${CRAFT}`,
   },
   {
+    id: "severin",
+    category: "landing",
+    title: "Severin Halbe",
+    blurb: "A dark, gilded page for a concert pianist",
+    look: {
+      background: "#0d1a12",
+      ink: "#f4f1e8",
+      accent: "#d8b45c",
+      muted: "#8c9b8f",
+      display: "'Didot', 'Georgia', serif",
+      shape: "split",
+      headline: "SEVERIN HALBE",
+      sub: "Berlin · Vienna · Tokyo — the 2026 season",
+    },
+    prompt: `Build a single-page site for Severin Halbe, a concert pianist, announcing the 2026 season.
+
+Voice: formal, restrained, no marketing language. This is a programme, not a promotion.
+
+Look: very dark green (#0d1a12), warm off-white text (#f4f1e8), a single gold accent (#d8b45c). A high-contrast serif for the name, set very large with wide letter-spacing (0.08em); a quiet sans at 16px for everything else. Generous vertical space — the page should feel like the first page of a printed programme.
+
+Sections, in this order:
+1. Hero — the name in two lines, surname in gold italic. Beneath it one line: the three cities and the season.
+2. The programme — four works with composer, title, key and duration, set as a proper table with the durations aligned right in tabular figures. Real repertoire: Schubert, Ravel, Ligeti, Chopin.
+3. Dates — six concert dates with city, venue and a booking link. Past dates struck through and dimmed; the next one marked. Work out which is next from today's date in JavaScript, not by hard-coding it.
+4. About — two paragraphs, third person, no adjectives like "acclaimed" or "virtuoso". Facts: where he studied, who he studied under, what he has recorded.
+5. Footer — an agent's contact and a press-kit link.
+
+Use CSS gradients and colour blocks for imagery; never hotlink a photograph.
+
+${CRAFT}`,
+  },
+  {
     id: "ledger",
     category: "app",
     title: "Split the bill",

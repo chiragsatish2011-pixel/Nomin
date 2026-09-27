@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { WorkTreeView } from "@nomin/work-tree/react";
+import { krakenAurora, krakenDark, type AgentEvent } from "@nomin/work-tree";
 import { ParticleOrb } from "./ParticleOrb.js";
 import { currentPhase } from "./Pipeline.js";
 import { ThinkingSteps } from "./ThinkingSteps.js";
-import type { AgentEvent } from "@nomin/work-tree";
 
 /**
  * The thinking tag.
@@ -19,11 +20,11 @@ import type { AgentEvent } from "@nomin/work-tree";
 export function ThinkingBlock({
   events,
   running,
+  theme = "dark",
   status,
 }: {
   events: AgentEvent[];
   running: boolean;
-  /** Kept for the callers that pass it; the block reads its own theme. */
   theme?: "light" | "dark";
   status: string;
 }) {
@@ -80,7 +81,23 @@ export function ThinkingBlock({
 
       {open && (
         <div className="thinking-body">
-          <ThinkingSteps events={events} />
+          {/* While the turn is live the tree is the right picture: it grows as
+              the work does, and watching it grow is how you know something is
+              happening. Once the turn is over a diagram is the wrong shape for
+              reading back what was done, so the same events become the step
+              list — with the thinking and the file it wrote behind each row.
+              One tag, two states of the same record. */}
+          {running ? (
+            <div className="thinking-tree">
+              <WorkTreeView
+                events={events}
+                rootless
+                theme={theme === "dark" ? krakenDark : krakenAurora}
+              />
+            </div>
+          ) : (
+            <ThinkingSteps events={events} />
+          )}
         </div>
       )}
     </section>

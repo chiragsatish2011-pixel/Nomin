@@ -445,7 +445,19 @@ ${content}` }
               // A new plan supersedes the approved one — otherwise a second,
               // different task in the same session would silently keep
               // building against the plan agreed for the first.
-              if (found && planSignature(found) !== planSignature(planRef.current)) {
+              //
+              // But only from a turn that *proposed* rather than built. A turn
+              // that wrote files and happens to restate its plan in the report
+              // is narrating, not asking; treating that as a new proposal shut
+              // the gate again on finished work and asked for approval of the
+              // thing it had just delivered — over and over, a fresh plan each
+              // time the build reported back.
+              const built = (last.events ?? []).some((event) => PROPOSAL_BREAKERS.has(event.type));
+              if (
+                found &&
+                !built &&
+                planSignature(found) !== planSignature(planRef.current)
+              ) {
                 setPlan(found);
                 setPlanStatus("proposed");
               }
@@ -588,6 +600,23 @@ function describeAttachment(item: PreparedAttachment): string | undefined {
   if (item.kind === "text") return "text read";
   return undefined;
 }
+
+/**
+ * Events that mean this turn was building, not proposing.
+ *
+ * A plan block from a turn that touched the workspace is a description of what
+ * it did. Only a turn that produced nothing but words is actually asking.
+ */
+const PROPOSAL_BREAKERS = new Set([
+  "file.created",
+  "file.modified",
+  "tool.started",
+  "tool.completed",
+  "command.started",
+  "command.completed",
+  "build.started",
+  "build.completed",
+]);
 
 /** Two plans are the same plan when they aim at the same work. */
 function planSignature(plan: Plan | null): string {
