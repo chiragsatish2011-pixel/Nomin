@@ -342,11 +342,27 @@ export function useAgent() {
             },
           ]
         : [];
-      setMessages([...history, { role: "assistant", content: "", at: now, events: opening }]);
+      const newMessages = [...history, { role: "assistant" as const, content: "", at: now, events: opening }];
+      setMessages(newMessages);
       setEvents([]);
       setUsage(null);
       setWaitUntil(null);
       setRunning(true);
+
+      // Save immediately so the prompt isn't lost if the user refreshes mid-generation.
+      void saveSession({
+        id: sessionId,
+        title: titleFor(newMessages),
+        createdAt: parseInt(sessionId.slice(1, 14), 36),
+        updatedAt: Date.now(),
+        messages: newMessages,
+        plan: planOverride ?? (planStatus === "approved" ? plan : null),
+        planStatus: planOverride ? "approved" : planStatus,
+        step: 1,
+        mode,
+        workspace: workspaceRef.current.files.map((file) => ({ path: file.path, bytes: file.bytes, content: file.content })),
+        checkpoints,
+      });
 
       const controller = new AbortController();
       abort.current = controller;

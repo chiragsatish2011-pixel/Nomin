@@ -1628,11 +1628,3 @@ html, body { overflow-x: hidden; }
 .actions { display: flex; gap: 4px; margin-top: 12px; align-items: center; }
 .feedback-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; background: transparent; color: var(--muted-soft); border-radius: 6px; cursor: pointer; transition: all 0.15s ease; }
 .feedback-btn:hover { background: var(--surface-hi); color: var(--ink); transform: scale(1.05); }
-
-/* --- World Class AI UI Redesign --- */
-.user-box { background: linear-gradient(145deg, var(--surface-hi), var(--surface)); border: 1px solid var(--hairline); box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
-.build-card { background: rgba(255,255,255,0.02); backdrop-filter: blur(10px); transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease; }
-.build-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.06); border-color: var(--purple-lift); }
-.composer-shell:focus-within .composer-halo { opacity: 0.35; filter: blur(28px); }
-.composer-core { transition: border-color 0.2s ease, box-shadow 0.2s ease; }
-.composer-core:focus-within { border-color: var(--purple-lift); box-shadow: 0 0 0 4px var(--purple-wash); }

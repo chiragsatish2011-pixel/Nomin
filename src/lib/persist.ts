@@ -107,7 +107,7 @@ export async function loadLastSession(): Promise<SessionRecord | null> {
   } catch {
     id = null;
   }
-  if (id === String(HOME)) return null;
+  if (id === "HOME") return null;
   if (id) {
     const record = await loadSession(id);
     if (record?.messages.length) return record;

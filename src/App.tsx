@@ -839,6 +839,16 @@ function Chat({
                     <i />
                   </span>
                 )}
+                
+                {/* Everything this session has built, as separate things. Inline with text. */}
+                {i === messages.length - 1 && builds.length > 0 && (
+                  <BuildCards
+                    builds={builds}
+                    active={activeBuild}
+                    onOpen={onOpenBuild}
+                    onDownload={onDownloadBuild}
+                  />
+                )}
               </div>
 
               {plan && i === lastPlanTurn && (
@@ -860,19 +870,6 @@ function Chat({
                   text={message.content}
                   verdict={i === messages.length - 1 ? undefined : message.verdict}
                   retry={retry}
-                />
-              )}
-
-              {/* Everything this session has built, as separate things. A new
-                  request writes a new entry point, so it becomes its own card
-                  rather than overwriting the last one; opening a card shows
-                  that build and only that build. */}
-              {i === messages.length - 1 && builds.length > 0 && (
-                <BuildCards
-                  builds={builds}
-                  active={activeBuild}
-                  onOpen={onOpenBuild}
-                  onDownload={onDownloadBuild}
                 />
               )}
 
