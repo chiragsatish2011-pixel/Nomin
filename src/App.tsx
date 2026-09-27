@@ -591,7 +591,7 @@ export default function App() {
               <p><strong>Headers:</strong> <code>Authorization: Bearer &lt;API_KEY&gt;</code></p>
               <br/>
               <p>API Keys are currently invite-only.</p>
-              <a href="mailto:admin@nomin.ai?subject=API Access Request" className="primary-btn" style={{display: 'inline-block', marginTop: 15, textDecoration: 'none'}}>Request API Key via Email</a>
+              <a href="mailto:nominofficial2026@gmail.com?subject=API Access Request" className="primary-btn" style={{display: 'inline-block', marginTop: 15, textDecoration: 'none'}}>Request API Key via Email</a>
             </div>
           </div>
         </div>

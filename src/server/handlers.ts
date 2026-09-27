@@ -309,7 +309,7 @@ export async function handleApiGenerate(req: IncomingMessage, res: ServerRespons
   const keys = (process.env.NOMIN_API_KEYS || "master-key-123").split(",").map(k => k.trim());
   
   if (!auth || !auth.startsWith("Bearer ") || !keys.includes(auth.slice(7).trim())) {
-    json(res, 401, { error: "Unauthorized. Please email admin@nomin.ai to request an API key." });
+    json(res, 401, { error: "Unauthorized. Please email nominofficial2026@gmail.com to request an API key." });
     return;
   }
 
@@ -326,28 +326,57 @@ export async function handleApiGenerate(req: IncomingMessage, res: ServerRespons
   try {
     const finalFiles: Record<string, string> = {};
     const messages = [{ role: "user", content: body.prompt }];
-    
-    for await (const frame of runTurn({
-      messages,
-      title: "API Generation",
-      model: body.model || "core",
-      mode: "balanced",
-      sessionId: "api-" + Date.now(),
-      plan: null,
-      files: [],
-      signal: controller.signal,
-    })) {
-      // Accumulate files if the frame provides them
-      if (frame.kind === "files" && frame.files) {
-        for (const file of frame.files) {
-          if (file.content) {
-            finalFiles[file.path] = file.content;
+    let pass = 0;
+    const MAX_PASSES = 3;
+    let resolved = false;
+
+    while (pass < MAX_PASSES && !resolved) {
+      pass++;
+      let currentVerdict = null;
+      let aiResponse = "";
+
+      for await (const frame of runTurn({
+        messages: messages as any,
+        title: "API Generation",
+        model: body.model || "core",
+        mode: "balanced",
+        sessionId: "api-" + Date.now(),
+        plan: null,
+        files: Object.keys(finalFiles).map(p => ({ path: p, bytes: finalFiles[p].length, content: finalFiles[p] })),
+        signal: controller.signal,
+      })) {
+        if (frame.kind === "text" && frame.text) {
+          aiResponse += frame.text;
+        }
+        if (frame.kind === "files" && frame.files) {
+          for (const file of frame.files) {
+            if (file.content) {
+              finalFiles[file.path] = file.content;
+            }
           }
         }
+        if (frame.kind === "verdict" && frame.verdict) {
+          currentVerdict = frame.verdict;
+        }
+      }
+      
+      messages.push({ role: "assistant", content: aiResponse });
+
+      if (currentVerdict && (currentVerdict.status === "concerns" || currentVerdict.status === "failed")) {
+        const brief = [
+          "The review found this work incomplete. Fix it now - edit the files that exist, do not start over.",
+          currentVerdict.summary,
+          currentVerdict.issues.length ? "Findings:\n" + currentVerdict.issues.map((i: string) => "- " + i).join("\n") : "",
+          "Finish the deliverable, then say what you changed and what you checked."
+        ].filter(Boolean).join("\n\n");
+        messages.push({ role: "user", content: brief });
+        resolved = false;
+      } else {
+        resolved = true;
       }
     }
     
-    json(res, 200, { success: true, files: finalFiles });
+    json(res, 200, { success: true, passes: pass, verified: resolved, files: finalFiles });
   } catch (error) {
     json(res, 500, { error: error instanceof Error ? error.message : "Generation failed." });
   }
