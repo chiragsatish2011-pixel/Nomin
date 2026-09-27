@@ -349,4 +349,4 @@ function providerMessage(_detail: string, status: number): string {
 const describe = (error: unknown) =>
   error instanceof Error && error.name === "TimeoutError"
     ? "Trion 1.5 timed out."
-    : "Nomin could not reach Trion 1.5.";
+    : `Nomin could not reach Trion 1.5: ${error instanceof Error ? error.message : String(error)}`;
