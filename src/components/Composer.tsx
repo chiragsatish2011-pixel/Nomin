@@ -278,11 +278,19 @@ export function Composer({
           value={draft}
           placeholder={placeholder}
           rows={1}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            event.target.style.height = 'auto';
+            event.target.style.height = Math.min(event.target.scrollHeight, 220) + 'px';
+          }}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
               submit();
+              // Reset height on submit
+              if (event.target instanceof HTMLTextAreaElement) {
+                event.target.style.height = 'auto';
+              }
             }
           }}
         />

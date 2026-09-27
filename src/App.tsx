@@ -370,6 +370,16 @@ export default function App() {
 
   const started = messages.length > 0;
 
+  useEffect(() => {
+    if (!running) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "The AI is currently working. If you leave now, the generation will be stopped.";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [running]);
+
   const toggleCanvas = useCallback(() => {
     setCanvasOpen((open) => {
       setCanvasPinnedShut(open);
