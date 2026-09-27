@@ -52,7 +52,7 @@ export interface ModelDescriptor {
 }
 
 const DEFAULT_RETRY: RetryPolicy = {
-  maxAttempts: 6,
+  maxAttempts: 3,
   baseDelayMs: 2000,
   maxDelayMs: 60000,
   // 429 = rate limited. 500/502/503/504 = the provider is overloaded; the NVIDIA

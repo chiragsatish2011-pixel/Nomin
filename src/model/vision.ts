@@ -50,7 +50,7 @@ export interface VisionResult {
 const FRAMES_PER_CALL = 2;
 const LANE = "vision";
 
-const scheduler = new CrpmScheduler({ [LANE]: { rpm: 30, concurrency: 2 } });
+const scheduler = new CrpmScheduler({ [LANE]: { rpm: 15, concurrency: 1 } });
 
 function visionModel(env: NodeJS.ProcessEnv): { model: ModelDescriptor; key: string } | null {
   // Same fallback chain as the manager: its own key, then the manager key,
