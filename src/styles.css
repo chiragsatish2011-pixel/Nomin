@@ -1626,44 +1626,9 @@ html, body { overflow-x: hidden; }
 .feedback-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; background: transparent; color: var(--muted-soft); border-radius: 6px; cursor: pointer; transition: all 0.15s ease; }
 .feedback-btn:hover { background: var(--surface-hi); color: var(--ink); transform: scale(1.05); }
 
-/* --- Ultra-Premium 3D Glassmorphism --- */
-.user-box {
-  background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01));
-  border: 1px solid rgba(255,255,255,0.1);
-  border-top: 1px solid rgba(255,255,255,0.2);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.05);
-  backdrop-filter: blur(16px);
-}
-:root[data-theme="light"] .user-box {
-  background: linear-gradient(135deg, rgba(0,0,0,0.03), rgba(0,0,0,0.01));
-  border: 1px solid rgba(0,0,0,0.05);
-  border-top: 1px solid rgba(255,255,255,0.8);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.5);
-}
-
-.build-card {
-  background: linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0));
-  border: 1px solid rgba(255,255,255,0.08);
-  border-top: 1px solid rgba(255,255,255,0.15);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.04);
-  backdrop-filter: blur(12px);
-  transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
-}
-.build-card:hover {
-  transform: translateY(-3px) scale(1.005);
-  box-shadow: 0 12px 32px rgba(0,0,0,0.2), 0 4px 12px rgba(113,50,245,0.15), inset 0 1px 0 rgba(255,255,255,0.1);
-  border-color: rgba(113,50,245,0.3);
-}
-
-.composer-shell:focus-within .composer-halo { opacity: 0.35; filter: blur(28px); }
-.composer-core { transition: border-color 0.2s ease, box-shadow 0.2s ease; }
-.composer-core:focus-within { border-color: var(--purple-lift); box-shadow: 0 0 0 4px var(--purple-wash); }
-
-/* --- Live Tree Animation --- */
+/* --- Live Tree Upgrades --- */
 .step.running::before { background: linear-gradient(to bottom, var(--hairline) 0%, var(--purple) 50%, var(--hairline) 100%); background-size: 100% 200%; animation: data-flow 1.5s linear infinite; }
 @keyframes data-flow { 0% { background-position: 0 -100%; } 100% { background-position: 0 100%; } }
-
-/* --- Live Tree Upgrades --- */
 .step.running > .step-pip { background: var(--purple) !important; border: 2px solid #fff !important; box-shadow: 0 0 8px var(--purple), 0 0 0 0 rgba(113, 50, 245, 0.6) !important; animation: step-live-core 1.5s cubic-bezier(0.16, 1, 0.3, 1) infinite !important; }
 @keyframes step-live-core { 0% { box-shadow: 0 0 8px var(--purple), 0 0 0 0 rgba(113, 50, 245, 0.6); transform: scale(1); } 50% { box-shadow: 0 0 16px var(--purple), 0 0 0 8px rgba(113, 50, 245, 0); transform: scale(1.25); } 100% { box-shadow: 0 0 8px var(--purple), 0 0 0 0 rgba(113, 50, 245, 0); transform: scale(1); } }
 .step.done > .step-pip { box-shadow: 0 0 6px rgba(113, 50, 245, 0.4); }
