@@ -138,7 +138,7 @@ export const SUPERVISOR: ModelDescriptor = {
   endpoint: endpointOf("https://integrate.api.nvidia.com/v1"),
   apiKeyEnv: "NOMIN_SUPERVISOR_API_KEY",
   contextTokens: 128_000,
-  maxOutputTokens: 900,
+  maxOutputTokens: 1400,
   capabilities: { tools: false, streaming: true, reasoning: false, vision: true },
   // Short and few on purpose. This seat is served intermittently, and a long
   // retry ladder on a model that is going to answer 504 anyway just delays the

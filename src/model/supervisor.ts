@@ -1,4 +1,5 @@
 import { NvidiaProvider } from "./nvidia.js";
+import { parseLooseJson } from "./tooltext.js";
 import { SUPERVISOR, type ModelDescriptor } from "./registry.js";
 import type { ContentPart, Message } from "./types.js";
 
@@ -480,7 +481,7 @@ const STATUSES: VerificationStatus[] = ["verified", "concerns", "failed", "unver
  * not run" — which is how a working manager looked broken. So a prose answer
  * is salvaged from its approval line rather than discarded.
  */
-function parseVerdict(raw: string): ParsedVerdict | null {
+export function parseVerdict(raw: string): ParsedVerdict | null {
   return parseJsonVerdict(raw) ?? parseProseVerdict(raw);
 }
 
@@ -489,55 +490,99 @@ function parseProseVerdict(raw: string): ParsedVerdict | null {
   if (!text) return null;
   const lower = text.toLowerCase();
 
-  // The explicit approval line the prompt asks for, when it is all there is.
-  const notApproved = /\bnot approved\b/.test(lower);
-  const approved = !notApproved && /\bapproved\b/.test(lower);
+  /**
+   * The status the manager actually declared.
+   *
+   * An explicit `"status": "concerns"` is the answer, full stop — it is what
+   * was asked for, and a reviewer that wrote it has decided. Only when there
+   * is no such field does the word itself count, and then it is the *first*
+   * one in the text, not the first one in this list: scanning the list in
+   * order found "verified" wherever it appeared later in a report and handed
+   * back an approval for work the manager had just rejected in its opening
+   * line. Nothing is more important than this being right.
+   */
+  const declared = /"?\bstatus"?\s*[:=]\s*"?(verified|concerns|failed|unverified)\b/.exec(lower);
+  let status: VerificationStatus | null = (declared?.[1] as VerificationStatus) ?? null;
 
-  const named = STATUSES.find((status) =>
-    new RegExp(`\\b(status\\s*[:=]\\s*)?${status}\\b`).test(lower),
-  );
-  const status: VerificationStatus | null = notApproved
-    ? (named && named !== "verified" ? named : "concerns")
-    : approved
-      ? "verified"
-      : (named ?? null);
+  // Then the approval line the prompt asks for. It comes before the bare-word
+  // scan because it is a verdict, and a bare word in running prose is not:
+  // "NOT APPROVED — nothing can be verified until the menu exists" was read as
+  // an approval, on the strength of the word "verified" in the explanation of
+  // why it was being refused. "not approved" is tested first so it is never
+  // mistaken for the word it contains.
+  if (!status) {
+    if (/\bnot approved\b/.test(lower)) status = "concerns";
+    else if (/\bapproved\b/.test(lower)) status = "verified";
+  }
+
+  // Last, a bare status word — the earliest one in the text, not the first in
+  // this list, which is a different thing and was the other half of the bug.
+  if (!status) {
+    let earliest = Infinity;
+    for (const candidate of STATUSES) {
+      const at = new RegExp(`\\b${candidate}\\b`).exec(lower)?.index ?? -1;
+      if (at !== -1 && at < earliest) {
+        earliest = at;
+        status = candidate;
+      }
+    }
+  }
   if (!status) return null;
 
   // Bulleted lines are the findings; the first ordinary sentence is the summary.
   const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
-  const issues = lines
-    .filter((line) => /^[-*•]\s+/.test(line))
-    .map((line) => line.replace(/^[-*•]\s+/, "").slice(0, 200))
-    .slice(0, 5);
+  const issues = cleanIssues(
+    lines.filter((line) => /^[-*•]\s+/.test(line)).map((line) => line.replace(/^[-*•]\s+/, "")),
+  );
+  // A summary field the model wrote beats the first line of the raw reply —
+  // which, when the reply was JSON that failed to parse, was the JSON itself.
+  const written = /"summary"\s*:\s*"([^"]{4,200})"/.exec(text)?.[1];
   const summary =
-    lines.find((line) => !/^[-*•#]/.test(line) && line.length > 12)?.slice(0, 160) ??
+    written ??
+    lines
+      .find((line) => !/^[-*•#{[]/.test(line) && !line.includes('":') && line.length > 12)
+      ?.slice(0, 160) ??
     (status === "verified" ? "The manager approved the work." : "The manager sent the work back.");
 
   return { status, summary, issues, report: text.slice(0, 2400) };
 }
 
 function parseJsonVerdict(raw: string): ParsedVerdict | null {
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start === -1 || end <= start) return null;
-  try {
-    const parsed = JSON.parse(raw.slice(start, end + 1)) as {
-      status?: string;
-      summary?: string;
-      issues?: string[];
-      report?: string;
-    };
-    const status = parsed.status as VerificationStatus | undefined;
-    if (!status || !STATUSES.includes(status)) return null;
-    return {
-      status,
-      summary: (parsed.summary ?? "").slice(0, 160),
-      issues: Array.isArray(parsed.issues) ? parsed.issues.slice(0, 5).map(String) : [],
-      report: typeof parsed.report === "string" ? parsed.report.slice(0, 2400) : undefined,
-    };
-  } catch {
-    return null;
+  // `parseLooseJson` closes what the token ceiling cut off. A verdict whose
+  // `report` field ran out of room is still a verdict, and rejecting it sent
+  // the whole thing to the prose reader — which then had to guess at a status
+  // the model had stated plainly in the first field.
+  const parsed = parseLooseJson(raw) as {
+    status?: string;
+    summary?: string;
+    issues?: unknown;
+    report?: string;
+  } | null;
+  if (!parsed || typeof parsed !== "object") return null;
+
+  const status = parsed.status as VerificationStatus | undefined;
+  if (!status || !STATUSES.includes(status)) return null;
+  return {
+    status,
+    summary: (parsed.summary ?? "").slice(0, 160),
+    issues: cleanIssues(parsed.issues),
+    report: typeof parsed.report === "string" ? parsed.report.slice(0, 2400) : undefined,
+  };
+}
+
+/** Findings worth showing: real strings, trimmed, no blanks, no repeats. */
+function cleanIssues(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of value) {
+    const text = String(item ?? "").trim().slice(0, 200);
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    out.push(text);
+    if (out.length === 5) break;
   }
+  return out;
 }
 
 const claimsSuccess = (answer: string) => {
