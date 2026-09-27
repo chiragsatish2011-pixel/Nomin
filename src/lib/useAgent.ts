@@ -16,7 +16,7 @@ import {
   loadLastSession,
   loadSession,
   newSessionId,
-  saveSession,
+  saveSession, clearLastSession,
   titleFor,
   type SessionRecord,
 } from "./persist.js";
@@ -184,7 +184,7 @@ export function useAgent() {
   const reset = useCallback(() => {
     abort.current?.abort();
     setSessionId(newSessionId());
-    setMessages([]);
+    setMessages([]);\n    clearLastSession();
     setEvents([]);
     setUsage(null);
     setWaitUntil(null);

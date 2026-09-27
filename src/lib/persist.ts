@@ -107,6 +107,7 @@ export async function loadLastSession(): Promise<SessionRecord | null> {
   } catch {
     id = null;
   }
+  if (id === String(HOME)) return null;
   if (id) {
     const record = await loadSession(id);
     if (record?.messages.length) return record;
@@ -134,3 +135,5 @@ export function titleFor(messages: ChatMessage[]): string {
   if (!first) return "New session";
   return first.content.split("\n")[0]?.slice(0, 60) || "New session";
 }
+
+export function clearLastSession() { try { localStorage.setItem(LAST_KEY, "HOME"); } catch {} }
