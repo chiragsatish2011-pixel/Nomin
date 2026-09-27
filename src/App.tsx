@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "./components/Canvas.js";
 import { Composer, type Mode } from "./components/Composer.js";
 import { describe as describeCheckpoint } from "./lib/checkpoints.js";
-import { Mark } from "./components/Mark.js";
+import { Mark, MarkWatermark } from "./components/Mark.js";
 import { Markdown } from "./components/Markdown.js";
 import { ReportCard } from "./components/ReportCard.js";
 import { ThinkingBlock } from "./components/ThinkingBlock.js";
 import { CommandPalette, type Command } from "./components/CommandPalette.js";
 import { PlanCard } from "./components/PlanCard.js";
 import { QuestionCard } from "./components/QuestionCard.js";
+import { Templates } from "./components/Templates.js";
 import { parsePlan } from "./model/plan.js";
 import { prepare, type PreparedAttachment } from "./lib/media.js";
 import { readCanvas } from "./lib/artifacts.js";
@@ -490,7 +491,7 @@ export default function App() {
     <div className={`workspace${canvasOpen ? " with-canvas" : ""}`}>
       <header className="taskbar">
         <div className="brand">
-          <Mark size={24} busy={running} />
+          <Mark size={34} busy={running} />
           <span className="brand-name">Nomin Code</span>
         </div>
 
@@ -660,6 +661,11 @@ export default function App() {
               Trion 1.5 can make mistakes. Nomin verifies work against real evidence — check anything
               marked unverified.
             </p>
+
+            {/* Templates are briefs, not files. Picking one writes it into the
+                box above so it can be read and edited before anything is
+                built — a starting point, never a surprise. */}
+            {!started && <Templates onPick={setDraft} />}
           </div>
         </main>
 
@@ -681,13 +687,11 @@ export default function App() {
 function Welcome({ running, pick }: { running: boolean; pick: (text: string) => void }) {
   return (
     <div className="welcome">
-      {/* The home card is the mark and nothing else. The particle orb used to
-          sit behind it, which put a second animated thing in the one place
-          that should be still — the logo is the identity here, so it stands
-          alone. The orb keeps its job in the chat, where work is live. */}
-      <div className="welcome-mark">
-        <Mark size={104} busy={running} />
-      </div>
+      {/* The mark sits behind the heading as a watermark rather than beside it:
+          large enough to be the page's identity, faint enough that the question
+          is still the first thing read. It is the same file, only scaled and
+          faded — nothing about the artwork changes. */}
+      <MarkWatermark size={380} />
       <h1>What are we building?</h1>
       <p>
         Describe the outcome. Nomin Code asks what it needs, plans it for your approval, then builds,

@@ -35,7 +35,7 @@ export const WORK_PROMPT = `You have tools and an approved plan. Build it for re
 - a long file will not fit in one reply. For anything past roughly 120 lines, write the opening section with write_file and then add the rest with append_file, a section at a time, until the file is finished. Several complete calls beat one that gets cut off
 - append_file continues a file from exactly where it stops; send only file content in it, never a sentence about what you are doing
 - read_file before editing anything that already exists; list_files when you resume work
-- run_command (npm, npx, node, tsc, vite) to install, build and test what you wrote
+- run_command (npm, npx, node, tsc, vite) to install, build and test what you wrote. Only commands that finish: never a dev server, never \`serve\`, \`npm run dev\`, \`start\`, \`preview\` or anything with --watch. The workspace is rendered and executed for you and any runtime error comes back to you, so there is nothing to serve
 - follow the approved plan in order, then verify: run it, read the output, fix what fails, run it again
 - when you reply, say briefly what you did and what you checked. State plainly what is partial or blocked. Never call work verified without evidence.
 

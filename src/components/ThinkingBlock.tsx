@@ -1,36 +1,33 @@
 import { useEffect, useRef, useState } from "react";
-import { WorkTreeView } from "@nomin/work-tree/react";
-import { krakenAurora, krakenDark, type AgentEvent } from "@nomin/work-tree";
 import { ParticleOrb } from "./ParticleOrb.js";
 import { currentPhase } from "./Pipeline.js";
 import { ThinkingSteps } from "./ThinkingSteps.js";
+import type { AgentEvent } from "@nomin/work-tree";
 
 /**
- * The thinking block: the orb, the status line, and — once opened — the whole
- * record of the turn.
+ * The thinking tag.
  *
- * It collapses to a single line and expands to two readable views of the same
- * events: **Steps**, which is the turn written out in order with what the
- * agent thought and produced behind each row, and **Tree**, the live diagram
- * growing out of the orb.
+ * One line when closed, the whole record of the turn when open: what it
+ * thought, what it ran, the files it wrote and what it wrote in them, nested
+ * the way the work nested. There is deliberately only one view — it was two
+ * for a while, a step list and a diagram of the same events, and having to
+ * pick between them meant neither was the place you looked.
  *
- * Steps is the default because it is the one you can read back afterwards. The
- * reasoning is never streamed into the transcript — it sits inside the step it
- * belongs to, and only appears when you ask for it.
+ * The private reasoning is never streamed into the transcript. It sits inside
+ * the step it belongs to and appears when that step is opened.
  */
 export function ThinkingBlock({
   events,
   running,
-  theme,
   status,
 }: {
   events: AgentEvent[];
   running: boolean;
-  theme: "light" | "dark";
+  /** Kept for the callers that pass it; the block reads its own theme. */
+  theme?: "light" | "dark";
   status: string;
 }) {
   const [open, setOpen] = useState(true);
-  const [view, setView] = useState<"steps" | "tree">("steps");
   const startedAt = useRef(Date.now());
   const [elapsed, setElapsed] = useState(0);
   const settled = useRef<number | null>(null);
@@ -66,7 +63,7 @@ export function ThinkingBlock({
         type="button"
         aria-expanded={open}
       >
-        <ParticleOrb size={running ? 56 : 44} count={running ? 520 : 300} active={running} />
+        <ParticleOrb size={running ? 44 : 34} count={running ? 520 : 300} active={running} />
         <span className="thinking-copy">
           <span className="thinking-label">{running ? status : `Thought for ${seconds}s`}</span>
           <span className="thinking-meta">
@@ -83,36 +80,7 @@ export function ThinkingBlock({
 
       {open && (
         <div className="thinking-body">
-          <div className="thinking-views">
-            <button
-              type="button"
-              className={view === "steps" ? "on" : ""}
-              onClick={() => setView("steps")}
-            >
-              Steps
-            </button>
-            <button
-              type="button"
-              className={view === "tree" ? "on" : ""}
-              onClick={() => setView("tree")}
-            >
-              Tree
-            </button>
-          </div>
-
-          {view === "steps" ? (
-            <div className="thinking-steps">
-              <ThinkingSteps events={events} />
-            </div>
-          ) : (
-            <div className="thinking-tree">
-              <WorkTreeView
-                events={events}
-                rootless
-                theme={theme === "dark" ? krakenDark : krakenAurora}
-              />
-            </div>
-          )}
+          <ThinkingSteps events={events} />
         </div>
       )}
     </section>

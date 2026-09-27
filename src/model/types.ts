@@ -46,6 +46,18 @@ export interface ChatRequest {
   thinking?: boolean;
   /** Insist on a tool call rather than leaving it to the model's judgement. */
   requireTool?: boolean;
+  /**
+   * Stream the reply, or ask for it in one piece.
+   *
+   * Streaming is what the transcript wants — an answer that appears as it is
+   * written. It is also, on this backend, unusable for tool calls: the
+   * arguments of a streamed call are cut off after a couple of hundred
+   * characters and the stream still reports `finish_reason: "tool_calls"`, so
+   * a whole file arrives as its first line with every sign of success. Tool
+   * rounds therefore ask for the response in one piece, where the same call
+   * comes back complete.
+   */
+  stream?: boolean;
 }
 
 /**

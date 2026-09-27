@@ -1,4 +1,4 @@
-import { parseLooseJson } from "./tooltext.js";
+import { parseToolArguments } from "./tooltext.js";
 import type { Workspace } from "./workspace.js";
 import type { ToolDefinition } from "./types.js";
 
@@ -122,7 +122,7 @@ export async function runTool(
 ): Promise<ToolOutcome> {
   let args: Record<string, unknown>;
   try {
-    args = rawArguments ? ((parseLooseJson(rawArguments) ?? {}) as Record<string, unknown>) : {};
+    args = rawArguments ? parseToolArguments(name, rawArguments) : {};
   } catch {
     return fail(name, "Arguments were not valid JSON.");
   }

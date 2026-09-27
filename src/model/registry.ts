@@ -140,8 +140,11 @@ export const SUPERVISOR: ModelDescriptor = {
   contextTokens: 128_000,
   maxOutputTokens: 900,
   capabilities: { tools: false, streaming: true, reasoning: false, vision: true },
-  retry: { ...DEFAULT_RETRY, maxAttempts: 4, baseDelayMs: 1500 },
-  timeoutMs: 90_000,
+  // Short and few on purpose. This seat is served intermittently, and a long
+  // retry ladder on a model that is going to answer 504 anyway just delays the
+  // standby reviewer by minutes — the review has a deadline of its own.
+  retry: { ...DEFAULT_RETRY, maxAttempts: 2, baseDelayMs: 1000, maxDelayMs: 4000 },
+  timeoutMs: 30_000,
   notes:
     "Llama 3.2 90B Vision Instruct reviewer: reads a compact turn digest and, " +
     "when the work is previewable, looks at a rendering of it. Never writes code or runs tools. " +

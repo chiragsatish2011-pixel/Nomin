@@ -9,10 +9,10 @@
       "memory": 1024
     },
     "api/vision.ts": {
-      "maxDuration": 120
+      "maxDuration": 300
     },
     "api/review.ts": {
-      "maxDuration": 120
+      "maxDuration": 300
     }
   },
   "headers": [

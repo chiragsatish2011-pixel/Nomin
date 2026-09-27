@@ -2,41 +2,39 @@ import { useState } from "react";
 import type { AgentEvent } from "@nomin/work-tree";
 
 /**
- * The turn, written out as steps.
+ * The turn, written out.
  *
- * The work tree draws the *shape* of a turn, which is the right picture for
- * watching it run. It is not, however, something you can read back afterwards:
- * a finished build leaves a diagram whose labels are already gone past. This
- * is the same record as prose — each thing the agent did, in order, with what
- * it thought and what it produced tucked behind the step it belongs to.
+ * One list, nested the way the work actually nested: the build owns the tools
+ * it ran, each tool owns what it wrote or printed. A row with evidence behind
+ * it opens in place — the thinking, the file it wrote, the output a command
+ * gave back — so the whole record of a turn is readable from the one tag
+ * rather than split across two views of the same events.
  *
- * Nothing here is invented. Every row is an event the agent actually emitted,
- * and a step only offers to open when there is real evidence underneath it.
+ * Nothing here is invented. Every row is an event the agent emitted, and a row
+ * only offers to open when there is something real underneath it.
  */
 
-/** A `*.started` / `*.completed` pair folded into one readable row. */
 interface Step {
   key: string;
   kind: string;
   label: string;
   detail?: string;
   state: "running" | "done" | "failed";
-  /** What it thought, wrote or printed. Shown only when opened. */
   body?: string;
   bodyKind?: "thinking" | "code" | "output" | "text";
   bodyTitle?: string;
   at?: number;
   endedAt?: number;
+  children: Step[];
 }
 
-const OPENS = /\.(started)$/;
+const OPENS = /\.started$/;
 const CLOSES = /\.(completed|passed|created|modified|resumed)$/;
-const FAILS = /\.(failed)$/;
+const FAILS = /\.failed$/;
 
-/** Rows that are pure scaffolding — the turn's own start and finish. */
+/** The turn's own start and finish are scaffolding, not steps. */
 const SKIP = new Set(["task.started", "task.completed"]);
 
-/** A readable name for an event that never carried a label of its own. */
 const FALLBACK: Record<string, string> = {
   "thinking.started": "Thinking",
   "thinking.completed": "Thought it through",
@@ -66,13 +64,23 @@ const FALLBACK: Record<string, string> = {
 };
 
 /**
- * Fold the event log into steps. A `*.started` opens a row and the matching
- * end event settles it; anything that arrives without a partner stands on its
- * own, because an event with no pair is still something that happened.
+ * Fold the event log into a tree of steps.
+ *
+ * Events carry a `parent`, so nesting is read from the log rather than
+ * guessed: the tool calls of a build sit under that build. An event whose
+ * parent has not been seen is promoted to the top rather than dropped, because
+ * a step with a missing parent still happened.
  */
 export function toSteps(events: AgentEvent[]): Step[] {
-  const steps: Step[] = [];
+  const roots: Step[] = [];
+  const byId = new Map<string, Step>();
   const open = new Map<string, Step>();
+
+  const place = (step: Step, parent?: string) => {
+    const host = parent ? byId.get(parent) : undefined;
+    if (host) host.children.push(step);
+    else roots.push(step);
+  };
 
   events.forEach((event, index) => {
     if (SKIP.has(event.type)) return;
@@ -87,8 +95,10 @@ export function toSteps(events: AgentEvent[]): Step[] {
         detail: event.detail,
         state: "running",
         at: event.at,
+        children: [],
       };
-      steps.push(step);
+      place(step, event.parent === "task" ? undefined : event.parent);
+      if (event.id) byId.set(event.id, step);
       open.set(key, step);
       return;
     }
@@ -108,8 +118,8 @@ export function toSteps(events: AgentEvent[]): Step[] {
       return;
     }
 
-    // No partner: a standalone fact — a file written, a limit hit, a test run.
-    steps.push({
+    // A standalone fact: a file written, a limit hit, a test run.
+    const step: Step = {
       key,
       kind,
       label: event.label ?? FALLBACK[event.type] ?? event.type,
@@ -119,56 +129,72 @@ export function toSteps(events: AgentEvent[]): Step[] {
       bodyKind: event.bodyKind,
       bodyTitle: event.bodyTitle,
       at: event.at,
-    });
+      children: [],
+    };
+    place(step, event.parent === "task" ? undefined : event.parent);
+    if (event.id) byId.set(event.id, step);
   });
 
-  return steps;
+  return roots;
 }
 
 export function ThinkingSteps({ events }: { events: AgentEvent[] }) {
   const steps = toSteps(events);
   if (!steps.length) return null;
+  return <StepList steps={steps} depth={0} />;
+}
+
+function StepList({ steps, depth }: { steps: Step[]; depth: number }) {
   return (
-    <ol className="steps">
+    <ol className="steps" data-depth={depth}>
       {steps.map((step) => (
-        <StepRow key={step.key} step={step} />
+        <StepRow key={step.key} step={step} depth={depth} />
       ))}
     </ol>
   );
 }
 
-function StepRow({ step }: { step: Step }) {
-  const [open, setOpen] = useState(false);
+function StepRow({ step, depth }: { step: Step; depth: number }) {
   const body = step.body?.trim();
+  const hasChildren = step.children.length > 0;
+  // Nested work opens by default — that is the part you wanted to see. The
+  // evidence behind a single row stays folded until it is asked for.
+  const [open, setOpen] = useState(hasChildren && depth < 1);
+  const canOpen = Boolean(body) || hasChildren;
   const took =
     step.at && step.endedAt && step.endedAt - step.at > 900
       ? `${Math.round((step.endedAt - step.at) / 100) / 10}s`
       : null;
 
   return (
-    <li className={`step ${step.state} kind-${step.kind}`}>
+    <li className={`step ${step.state} kind-${step.kind}${open ? " open" : ""}`}>
       <span className="step-pip" aria-hidden="true" />
       <div className="step-body">
         <div className="step-line">
-          {body ? (
+          {canOpen ? (
             <button
               type="button"
               className="step-label opens"
               onClick={() => setOpen(!open)}
               aria-expanded={open}
             >
-              {step.label}
               <span className={`caret-icon${open ? " up" : ""}`}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M6 9l6 6 6-6" />
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 6l6 6-6 6" />
                 </svg>
               </span>
+              {step.label}
             </button>
           ) : (
             <span className="step-label">{step.label}</span>
           )}
           {step.detail && <span className="step-detail">{step.detail}</span>}
           {took && <span className="step-took">{took}</span>}
+          {hasChildren && !open && (
+            <span className="step-count">
+              {step.children.length} step{step.children.length === 1 ? "" : "s"}
+            </span>
+          )}
         </div>
 
         {open && body && (
@@ -177,6 +203,8 @@ function StepRow({ step }: { step: Step }) {
             <pre>{body}</pre>
           </div>
         )}
+
+        {open && hasChildren && <StepList steps={step.children} depth={depth + 1} />}
       </div>
     </li>
   );

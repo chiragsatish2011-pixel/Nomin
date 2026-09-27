@@ -152,7 +152,8 @@ export async function* runTurn(options: TurnOptions): AsyncGenerator<TurnFrame> 
   async function* attempt(
     messages: Message[],
     pass: number,
-    requireTool = false,
+    /** Force the tools off for this pass, whatever mode the turn is in. */
+    withoutTools = false,
   ): AsyncGenerator<TurnFrame> {
     state.thinking = true;
     state.toolCalls = [];
@@ -163,16 +164,27 @@ export async function* runTurn(options: TurnOptions): AsyncGenerator<TurnFrame> 
     let reasoning = "";
     yield tree({ type: "thinking.started", id: `thinking-${pass}`, parent: "task", label: "Thinking" });
 
+    const useTools = executing && !withoutTools;
     const stream = provider.stream({
       messages,
-      tools: executing ? TOOLS : undefined,
+      tools: useTools ? TOOLS : undefined,
       maxTokens: Math.min(settings.maxTokens, model.maxOutputTokens ?? settings.maxTokens),
       temperature: settings.temperature,
       signal: options.signal,
       // Building is doing, not deliberating. Left to think, this model spends
       // the whole budget on a private plan it already has and emits nothing.
       thinking: executing ? false : undefined,
-      requireTool: requireTool && executing,
+      // `tool_choice: "required"` makes this model answer in prose *instead*
+      // of calling anything — it spends the budget describing the file it was
+      // told it had to write. Left to choose, it calls the tool.
+      // Never "required". Told it must call something, this model answers in
+      // prose describing the file it was supposed to write and calls nothing.
+      // Left to choose, it calls the tool.
+      requireTool: false,
+      // Tool rounds are not streamed: the backend truncates the arguments of a
+      // streamed call, so a whole file arrives as its first line. See
+      // `readWhole`. Conversation still streams, where it belongs.
+      stream: !useTools,
     });
 
     let cooldowns = 0;
@@ -213,7 +225,7 @@ export async function* runTurn(options: TurnOptions): AsyncGenerator<TurnFrame> 
           // While building, content is held back until the end of the pass:
           // it is often a tool call written as prose, and machinery streamed
           // into the transcript cannot be taken back once it is on screen.
-          if (!executing) yield { kind: "text", text: event.text };
+          if (!useTools) yield { kind: "text", text: event.text };
           break;
         }
 
@@ -274,7 +286,7 @@ export async function* runTurn(options: TurnOptions): AsyncGenerator<TurnFrame> 
     }
 
     // A call the model wrote out as text is still a call. Take it.
-    if (executing && state.answer.trim()) {
+    if (useTools && state.answer.trim()) {
       const harvest = harvestToolCalls(state.answer, TOOL_NAMES);
       if (harvest.calls.length) {
         state.answer = harvest.text;
@@ -311,10 +323,33 @@ export async function* runTurn(options: TurnOptions): AsyncGenerator<TurnFrame> 
 
   while (round < MAX_TOOL_ROUNDS) {
     round += 1;
-    // After an approved plan the first move is always an action, so the first
-    // round insists on one rather than inviting another round of commentary.
-    yield* attempt(history, round, round === 1);
-    if (state.failed || !state.toolCalls.length || !workspace) break;
+    yield* attempt(history, round);
+    if (state.failed || !workspace) break;
+    if (!state.toolCalls.length) {
+      // No calls *and* cut off at the ceiling is not a finished build — it is
+      // a round that ran out of room mid-thought. Breaking here is what left a
+      // file written to one line with nothing to continue it, so the model is
+      // handed back the same history and asked to carry on.
+      if (state.finish !== "length" || round >= MAX_TOOL_ROUNDS) break;
+      yield tree({
+        type: "step.started",
+        id: `resume-${round}`,
+        parent: "task",
+        label: "Ran out of room — carrying on",
+      });
+      history = [
+        ...history,
+        {
+          role: "user",
+          content:
+            "You were cut off before you called a tool. Carry on from where you stopped: call the " +
+            "tool you were about to call. Do not start over and do not summarise.",
+        },
+      ];
+      state.finish = "";
+      yield tree({ type: "step.completed", id: `resume-${round}`, label: "Carrying on" });
+      continue;
+    }
 
     if (!buildOpen) {
       yield tree({ type: "step.started", id: "build", parent: "task", label: "Building" });
@@ -464,6 +499,58 @@ export async function* runTurn(options: TurnOptions): AsyncGenerator<TurnFrame> 
       id: "no-tools",
       label: state.answer ? "Answered without tools" : "Still asking for tools",
     });
+  }
+
+  /**
+   * A build that wrote files and then said nothing.
+   *
+   * This is the common way a long build ended with "the turn produced no
+   * answer". The last round spends its budget writing the file, gets cut off,
+   * is told to finish it, finishes it — and then stops, with no prose left to
+   * report. The old guards both skipped it, because they only fired when
+   * *nothing* had been touched, so the user was left with files on disk and an
+   * empty reply above them.
+   *
+   * The recovery is a single pass with the tools switched off, so it cannot
+   * start building again: it can only say what it did.
+   */
+  if (executing && !state.answer && !state.failed && touched.size) {
+    yield tree({
+      type: "step.started",
+      id: "report",
+      parent: "task",
+      label: "Writing the report",
+      detail: `${touched.size} file${touched.size === 1 ? "" : "s"} written`,
+    });
+    yield* attempt(
+      [
+        ...history,
+        {
+          role: "user",
+          content:
+            `You finished the tool work and wrote: ${[...touched.keys()].join(", ")}. ` +
+            "Now reply to the user in plain words: what you built, what you checked, and anything " +
+            "still partial or placeholder. Do not call any tools and do not paste the files back. " +
+            "A manager reviews this next, so report rather than declaring it finished.",
+        },
+      ],
+      400,
+      true,
+    );
+    yield tree({
+      type: state.answer ? "step.completed" : "step.failed",
+      id: "report",
+      label: state.answer ? "Reported what it built" : "Could not report",
+    });
+  }
+
+  // Files on disk with no report is still better than nothing: say what is
+  // there rather than leaving the turn blank.
+  if (executing && !state.answer && !state.failed && touched.size) {
+    state.answer =
+      `I wrote ${[...touched.keys()].join(", ")}, but the reply came back empty, so I cannot ` +
+      "tell you what is in them beyond that. Open the canvas to see what was built, or ask me to go over it.";
+    yield { kind: "text", text: state.answer };
   }
 
   if (!state.answer && !state.failed && !touched.size) {

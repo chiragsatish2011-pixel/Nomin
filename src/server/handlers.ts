@@ -58,11 +58,38 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse): Pro
 
   const body = await readJson(req);
   const controller = new AbortController();
+  let gone = false;
   // Abort only when the client goes away: `req`'s own close fires as soon as
   // its body has been read, which would kill the stream before it starts.
   res.on("close", () => {
-    if (!res.writableEnded) controller.abort();
+    if (!res.writableEnded) {
+      gone = true;
+      controller.abort();
+    }
   });
+  // A reader that closes the tab mid-build resets the socket, and an unhandled
+  // reset on the response takes the whole process down — locally it killed the
+  // dev server outright, and on a serverless host it is a 500 on a turn that
+  // was going perfectly well. There is nothing to do about a reader who has
+  // left except stop writing to them.
+  const forget = () => {
+    gone = true;
+  };
+  res.on("error", forget);
+  req.on("error", forget);
+  req.on("aborted", forget);
+
+  /** Write a frame, unless the reader has already gone. */
+  const send = (frame: unknown): boolean => {
+    if (gone || res.writableEnded) return false;
+    try {
+      res.write(`data: ${JSON.stringify(frame)}\n\n`);
+      return true;
+    } catch {
+      gone = true;
+      return false;
+    }
+  };
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -83,14 +110,22 @@ export async function handleChat(req: IncomingMessage, res: ServerResponse): Pro
       files: Array.isArray(body.files) ? body.files : undefined,
       signal: controller.signal,
     })) {
-      res.write(`data: ${JSON.stringify(frame)}\n\n`);
+      // Stop pulling on the agent the moment there is nobody to send it to.
+      if (!send(frame)) break;
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "The turn failed.";
-    res.write(`data: ${JSON.stringify({ kind: "error", message })}\n\n`);
-    res.write(`data: ${JSON.stringify({ kind: "end" })}\n\n`);
+    // An abort is the reader leaving, not a failure worth reporting to them.
+    if (!gone && !controller.signal.aborted) {
+      const message = error instanceof Error ? error.message : "The turn failed.";
+      send({ kind: "error", message });
+      send({ kind: "end" });
+    }
   }
-  res.end();
+  try {
+    if (!res.writableEnded) res.end();
+  } catch {
+    /* the socket is already gone */
+  }
 }
 
 /** POST /api/review — the manager's verdict on a finished turn. */

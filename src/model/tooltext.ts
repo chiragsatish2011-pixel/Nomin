@@ -59,16 +59,32 @@ export function harvestToolCalls(text: string, allowed: readonly string[]): Harv
     const slice = text.slice(start, span.end);
     const value = parseLoosely(slice, span.truncated);
 
-    if (value && isRecord(value)) {
-      const call = toToolCall(value, names, serial);
-      if (call) {
-        calls.push(call);
-        serial += 1;
-        if (span.truncated) repaired = true;
-        cuts.push([trimBack(text, start), trimForward(text, span.end)]);
-        index = span.end;
-        continue;
-      }
+    const strict = value && isRecord(value) ? toToolCall(value, names, serial) : null;
+
+    // A file's contents are the one argument that routinely defeats the scan
+    // above. A model writing HTML by hand does not escape the quotes inside
+    // it, so `<html lang="en">` closes the JSON string on its first quote and
+    // the object appears to end a few characters later. Sometimes that still
+    // parses — and writes `<!DOCTYPE html><html lang=` to disk as though it
+    // had succeeded — and sometimes it fails outright and the call is lost.
+    // Either way the contents are read again, verbatim, from the text.
+    const rescued = rescueWrite(text, start, names, serial, strict);
+    if (rescued) {
+      calls.push(rescued.call);
+      serial += 1;
+      if (rescued.truncated) repaired = true;
+      cuts.push([trimBack(text, start), trimForward(text, rescued.end)]);
+      index = rescued.end;
+      continue;
+    }
+
+    if (strict) {
+      calls.push(strict);
+      serial += 1;
+      if (span.truncated) repaired = true;
+      cuts.push([trimBack(text, start), trimForward(text, span.end)]);
+      index = span.end;
+      continue;
     }
 
     index = start + 1;
@@ -76,6 +92,39 @@ export function harvestToolCalls(text: string, allowed: readonly string[]): Harv
 
   if (!calls.length) return { calls: [], text, repaired: false };
   return { calls, text: withoutSpans(text, cuts), repaired };
+}
+
+/**
+ * Read one tool call's arguments.
+ *
+ * This is the structured `tool_calls` path, and it needs the same rescue as
+ * the prose one: the provider hands over the arguments as a *string the model
+ * generated*, so a file's contents arrive with their quotes and braces
+ * unescaped exactly as they do in prose. Parsing that strictly closed the
+ * string on the first `"` inside the HTML and wrote a page consisting of its
+ * first line — with no error anywhere, because the parse succeeded.
+ */
+export function parseToolArguments(name: string, raw: string): Record<string, unknown> {
+  const strict = (parseLooseJson(raw) ?? {}) as Record<string, unknown>;
+  if (!WRITERS.has(name)) return strict;
+
+  const key = CONTENT_KEY.exec(raw);
+  if (!key) return strict;
+
+  const path =
+    PATH_KEY.exec(raw.slice(0, key.index))?.[1] ??
+    (typeof strict.path === "string" ? strict.path : null);
+  if (!path) return strict;
+
+  const body = raw.slice(key.index + key[0].length);
+  // The arguments object is the whole string, so the contents run to the final
+  // quote before it closes — not to the first quote inside the file.
+  const close = /"\s*\}\s*$/.exec(body);
+  const content = unescape(close ? body.slice(0, close.index) : body);
+  const existing = typeof strict.content === "string" ? strict.content : "";
+  if (!content || content.length <= existing.length) return strict;
+
+  return { ...strict, path, content };
 }
 
 /**
@@ -207,6 +256,106 @@ function escapeControls(text: string): string {
     else if (char === '"') inString = !inString;
   }
 
+  return out;
+}
+
+/** Tools whose arguments carry a whole file, and the keys that hold it. */
+const WRITERS = new Set(["write_file", "append_file", "create_file", "edit_file"]);
+const NAME_AT = /^\s*\{\s*"(?:name|tool|tool_name|action)"\s*:\s*"([a-z_]+)"/;
+const NESTED_NAME_AT = /^\s*\{\s*"function"\s*:\s*\{\s*"name"\s*:\s*"([a-z_]+)"/;
+const PATH_KEY = /"(?:path|file|filename|file_path|filepath)"\s*:\s*"([^"]+)"/;
+const CONTENT_KEY = /"(?:content|text|body|data)"\s*:\s*"/;
+
+/**
+ * Read a file-writing call straight out of the text.
+ *
+ * The JSON parse above has to assume the model escaped its own string, and for
+ * a file's contents it never does: an HTML attribute's quote closes the string
+ * early, a `}` in a stylesheet closes the object early, and what comes back is
+ * either nothing at all or — worse — a call that parses cleanly and writes a
+ * page consisting of `<!DOCTYPE html><html lang=`. Everything about that looks
+ * like success, which is why it went unnoticed.
+ *
+ * So for the tools that write files the contents are taken verbatim: from the
+ * opening quote of the content argument to the `"}}` that closes the call.
+ * Every quote, brace and newline in between is the file, not punctuation.
+ *
+ * It is only used when it recovers *more* than the strict parse did, so a
+ * properly escaped call is never touched.
+ */
+function rescueWrite(
+  text: string,
+  start: number,
+  allowed: Set<string>,
+  serial: number,
+  strict: ToolCall | null,
+): { call: ToolCall; end: number; truncated: boolean } | null {
+  const head = text.slice(start, start + 600);
+  const name =
+    strict?.function.name ?? NAME_AT.exec(head)?.[1] ?? NESTED_NAME_AT.exec(head)?.[1] ?? null;
+  if (!name || !WRITERS.has(name) || !allowed.has(name)) return null;
+
+  const rest = text.slice(start);
+  const key = CONTENT_KEY.exec(rest);
+  if (!key) return null;
+
+  const path = PATH_KEY.exec(rest.slice(0, key.index))?.[1];
+  if (!path) return null;
+
+  // The contents run to the quote that closes the arguments object.
+  const from = key.index + key[0].length;
+  const body = rest.slice(from);
+  const close = /"\s*\}\s*\}/.exec(body);
+  const truncated = !close;
+  const content = unescape(close ? body.slice(0, close.index) : body);
+  const end = start + (close ? from + close.index + close[0].length : rest.length);
+
+  // Whatever the strict parse managed is the bar to clear.
+  let existing = "";
+  if (strict) {
+    try {
+      const parsed = JSON.parse(strict.function.arguments) as { content?: unknown };
+      if (typeof parsed.content === "string") existing = parsed.content;
+    } catch {
+      /* the strict call had no readable content */
+    }
+  }
+  if (!content || content.length <= existing.length) return null;
+
+  return {
+    call: {
+      id: strict?.id ?? `text-${serial}-${name}`,
+      type: "function",
+      function: { name, arguments: JSON.stringify({ path, content }) },
+    },
+    end,
+    truncated,
+  };
+}
+
+/** Undo the JSON escapes a model did write, and leave everything else alone. */
+function unescape(raw: string): string {
+  let out = "";
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] !== "\\") {
+      out += raw[i];
+      continue;
+    }
+    const next = raw[++i];
+    if (next === undefined) break;
+    if (next === "n") out += "\n";
+    else if (next === "t") out += "\t";
+    else if (next === "r") out += "\r";
+    else if (next === "b") out += "\b";
+    else if (next === "f") out += "\f";
+    else if (next === "u") {
+      const code = raw.slice(i + 1, i + 5);
+      if (/^[0-9a-fA-F]{4}$/.test(code)) {
+        out += String.fromCharCode(parseInt(code, 16));
+        i += 4;
+      } else out += "\\u";
+    } else out += next; // \" \\ \/ and anything else stands for itself
+  }
   return out;
 }
 

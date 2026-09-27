@@ -53,7 +53,11 @@ export class NvidiaProvider implements Provider {
       if (response.ok && response.body) {
         let streamError = false;
         try {
-          for await (const event of this.readStream(response.body)) {
+          const events =
+            request.stream === false
+              ? this.readWhole(response)
+              : this.readStream(response.body);
+          for await (const event of events) {
             if (event.type === "error" && event.status) {
               streamError = true;
               // Fake the status so the outer retry logic handles it
@@ -110,7 +114,7 @@ export class NvidiaProvider implements Provider {
       messages: request.messages,
       temperature: request.temperature ?? 0.2,
       max_tokens: request.maxTokens ?? this.model.maxOutputTokens ?? 4096,
-      stream: true,
+      stream: request.stream !== false,
       ...(request.tools?.length
         ? { tools: request.tools, tool_choice: request.requireTool ? "required" : "auto" }
         : {}),
@@ -125,11 +129,63 @@ export class NvidiaProvider implements Provider {
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         "Content-Type": "application/json",
-        Accept: "text/event-stream",
+        Accept: request.stream === false ? "application/json" : "text/event-stream",
       },
       body: JSON.stringify(body),
       signal: request.signal ?? AbortSignal.timeout(this.model.timeoutMs),
     });
+  }
+
+  /**
+   * Read a whole, unstreamed response and emit the same events a stream would.
+   *
+   * This exists for one reason: the backend truncates the arguments of a
+   * *streamed* tool call. A `write_file` carrying a 7KB page arrives as 256
+   * characters, the stream ends with `finish_reason: "tool_calls"`, and the
+   * agent writes the fragment to disk believing it succeeded — which is how a
+   * finished build produced a page consisting of `<!DOCTYPE html><html lang=`.
+   * The identical request with `stream: false` returns the call intact, so
+   * tool rounds take this path and nothing downstream has to know.
+   */
+  private async *readWhole(response: Response): AsyncGenerator<StreamEvent> {
+    let body: NvidiaWhole & { error?: { message: string; code?: number } };
+    try {
+      body = (await response.json()) as NvidiaWhole;
+    } catch {
+      yield { type: "error", status: 502, message: "The reply could not be read." };
+      return;
+    }
+
+    if (body.error) {
+      yield { type: "error", status: body.error.code || 500, message: body.error.message };
+      return;
+    }
+
+    const choice = body.choices?.[0];
+    const message = choice?.message;
+    if (message?.reasoning_content) yield { type: "reasoning", text: message.reasoning_content };
+    if (message?.content) yield { type: "delta", text: message.content };
+    for (const call of message?.tool_calls ?? []) {
+      yield {
+        type: "tool_call",
+        call: {
+          id: call.id ?? `call-${Math.random().toString(36).slice(2, 8)}`,
+          type: "function",
+          function: {
+            name: call.function?.name ?? "",
+            arguments: call.function?.arguments ?? "",
+          },
+        },
+      };
+    }
+    if (body.usage) {
+      yield {
+        type: "usage",
+        promptTokens: body.usage.prompt_tokens,
+        completionTokens: body.usage.completion_tokens,
+      };
+    }
+    yield { type: "done", finishReason: choice?.finish_reason ?? "stop" };
   }
 
   /** Parse the SSE body into provider-neutral stream events. */
@@ -203,6 +259,21 @@ export class NvidiaProvider implements Provider {
 
     for (const call of pending.values()) yield { type: "tool_call", call };
   }
+}
+
+interface NvidiaWhole {
+  choices?: Array<{
+    message?: {
+      content?: string | null;
+      reasoning_content?: string | null;
+      tool_calls?: Array<{
+        id?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
+    finish_reason?: string | null;
+  }>;
+  usage?: { prompt_tokens: number; completion_tokens: number } | null;
 }
 
 interface NvidiaChunk {

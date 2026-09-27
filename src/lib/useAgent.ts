@@ -291,8 +291,11 @@ export function useAgent() {
       // a description before the turn begins, and the description is what
       // travels with the request.
       let mediaContext = "";
+      const looking = attachments?.filter(
+        (item) => item.kind === "image" || item.kind === "video",
+      );
       if (attachments?.length) {
-        setVisionStatus("Reading the attachments");
+        setVisionStatus(readingLine(attachments));
         mediaContext = await describeAttachments(attachments, prompt);
         setVisionStatus(null);
       }
@@ -321,7 +324,24 @@ export function useAgent() {
           })),
         },
       ];
-      setMessages([...history, { role: "assistant", content: "", at: now, events: [] }]);
+      const opening: AgentEvent[] = looking?.length
+        ? [
+            {
+              type: "tool.started",
+              id: "vision",
+              label: readingLine(attachments ?? []),
+              detail: looking.map((item) => item.name).join(", ").slice(0, 80),
+              at: now,
+            },
+            {
+              type: "tool.completed",
+              id: "vision",
+              label: describeLooked(looking),
+              at: Date.now(),
+            },
+          ]
+        : [];
+      setMessages([...history, { role: "assistant", content: "", at: now, events: opening }]);
       setEvents([]);
       setUsage(null);
       setWaitUntil(null);
@@ -517,6 +537,30 @@ ${content}` }
     activeBuild,
     setActiveBuild,
   };
+}
+
+/**
+ * What the chat says while an attachment is being read.
+ *
+ * It used to say this only in the State panel, which is not where anyone is
+ * looking when they have just dropped in a photograph. It is work on the turn,
+ * so it is said on the turn.
+ */
+function readingLine(attachments: PreparedAttachment[]): string {
+  const images = attachments.filter((item) => item.kind === "image").length;
+  const videos = attachments.filter((item) => item.kind === "video").length;
+  if (images && !videos) return images === 1 ? "Looking at the image" : `Looking at ${images} images`;
+  if (videos && !images) return videos === 1 ? "Watching the video" : `Watching ${videos} videos`;
+  if (images && videos) return "Looking at what you sent";
+  return "Reading the attachments";
+}
+
+/** What it took from them, once it has looked. */
+function describeLooked(looked: PreparedAttachment[]): string {
+  const frames = looked.reduce((sum, item) => sum + item.frames.length, 0);
+  const videos = looked.filter((item) => item.kind === "video").length;
+  if (videos) return `Read ${frames} frame${frames === 1 ? "" : "s"}`;
+  return looked.length === 1 ? "Read the image" : `Read ${looked.length} images`;
 }
 
 /**

@@ -63,6 +63,28 @@ const ALLOWED_COMMANDS = new Set(["npm", "npx", "node", "tsc", "vite"]);
 const REFUSED_ARGS = [/^--?f(orce)?$/i, /^publish$/i, /^deploy$/i, /^login$/i, /^token$/i];
 
 /**
+ * Commands that start a server and never return.
+ *
+ * A model asked to verify its page reaches for `npx serve` — reasonably, since
+ * that is how a person would look at it. Here it is a trap: the process does
+ * not exit, so the turn sits on it until the timeout, burns two minutes, and
+ * reports a failure that was really the command doing exactly what it is for.
+ * The canvas already renders and executes the page, so there is a better
+ * answer than waiting, and the refusal says what it is.
+ */
+const SERVERS = [
+  /^serve$/i,
+  /^http-server$/i,
+  /^live-server$/i,
+  /^serve-handler$/i,
+  /^--watch$/i,
+  /^-w$/i,
+];
+
+/** npm scripts that are servers by convention. */
+const SERVER_SCRIPTS = new Set(["dev", "start", "serve", "preview", "watch"]);
+
+/**
  * Windows needs `shell: true` to run npm/npx/vite, which are .cmd shims — and
  * a shell means arguments are re-interpreted. So any argument carrying shell
  * punctuation is refused outright: the allowlist controls which program runs,
@@ -203,6 +225,20 @@ export class Workspace {
       );
     }
     const safeArgs = args.map(String);
+
+    // A server started here would never hand the turn back.
+    const startsServer =
+      safeArgs.some((arg) => SERVERS.some((pattern) => pattern.test(arg))) ||
+      (safeArgs[0] === "run" && safeArgs[1] !== undefined && SERVER_SCRIPTS.has(safeArgs[1]));
+    if (startsServer) {
+      throw new Error(
+        "That command starts a server and never exits, so it cannot be run here. " +
+          "You do not need one: the workspace files are rendered and executed automatically, " +
+          "and any runtime error comes back to you. To check your work, read the file you wrote " +
+          "and confirm it is complete — or run a command that finishes, such as a build or a test.",
+      );
+    }
+
     for (const arg of safeArgs) {
       if (REFUSED_ARGS.some((pattern) => pattern.test(arg))) {
         throw new Error(`"${arg}" needs a person to confirm it; it will not run automatically.`);

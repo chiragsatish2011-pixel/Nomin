@@ -33,7 +33,7 @@
   --muted-soft: #6f6890;
 
   --ui: "Kraken-Product", "IBM Plex Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --display: "Kraken-Brand", "IBM Plex Sans", Helvetica, Arial, sans-serif;
+  --display: "Space Grotesk", "Kraken-Brand", "IBM Plex Sans", Helvetica, Arial, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --aurora: linear-gradient(120deg, #7132f5, #9a6dff 34%, #4a14b5 62%, #b79cff);
@@ -87,9 +87,13 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
   border-bottom: 1px solid var(--hairline); background: var(--panel);
 }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand { gap: 12px; }
 .brand-name {
-  font-family: Papyrus, var(--display);
-  font-size: 18px; font-weight: 600; letter-spacing: 0.2px;
+  /* Papyrus fought the mark — a calligraphic face next to a hard geometric
+     glyph. Space Grotesk is built the same way the logo is: flat terminals,
+     tight geometry, no flourish. */
+  font-family: var(--display);
+  font-size: 19px; font-weight: 700; letter-spacing: -0.4px;
 }
 .taskbar-right { display: flex; align-items: center; gap: 8px; }
 .model-chip {
@@ -1009,68 +1013,113 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 }
 .camera-actions .primary:disabled { opacity: 0.6; cursor: progress; }
 
-/* ---------- the turn, written out as steps ----------
- * The same events as the tree, in a form you can read back after the fact.
- * Evidence stays folded away until a row is opened.
+/* ---------- the turn, written out ----------
+ * One list, nested the way the work nested. A row with evidence behind it
+ * opens in place; nested work carries its own spine so the depth is readable
+ * without indentation guides shouting about it.
  */
-.thinking-body { margin-left: 16px; padding-top: 10px; }
-.thinking-views {
-  display: inline-flex; gap: 2px; padding: 2px; margin-bottom: 10px;
-  border-radius: 9999px; background: var(--surface-hi);
+.thinking-body {
+  margin-left: 17px;
+  padding: 10px 0 2px;
+  animation: step-in 220ms ease both;
 }
-.thinking-views button {
-  padding: 4px 12px; border-radius: 9999px;
-  font-size: 12px; font-weight: 600; color: var(--muted);
+@keyframes step-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
 }
-.thinking-views button.on { background: var(--surface); color: var(--purple); box-shadow: var(--shadow); }
-.thinking-steps { position: relative; }
 
-.steps { list-style: none; margin: 0; padding: 0 0 0 2px; }
-.step { position: relative; display: flex; gap: 10px; padding: 3px 0 3px 12px; }
+.steps { list-style: none; margin: 0; padding: 0; }
+.steps[data-depth="0"] { padding-left: 2px; }
+
+.step { position: relative; display: flex; gap: 10px; padding: 2px 0 2px 14px; }
 /* the spine */
 .step::before {
-  content: ""; position: absolute; left: 3.5px; top: 0; bottom: 0; width: 1.25px;
+  content: "";
+  position: absolute; left: 4px; top: 0; bottom: 0; width: 1.25px;
   background: var(--hairline);
 }
-.step:first-child::before { top: 11px; }
-.step:last-child::before { bottom: auto; height: 11px; }
+.step:first-child::before { top: 12px; }
+.step:last-child::before { bottom: auto; height: 12px; }
+.step.open:last-child::before { bottom: 0; height: auto; }
+
 .step-pip {
-  position: absolute; left: 0; top: 8px; width: 8px; height: 8px; border-radius: 50%;
+  position: absolute; left: 0.5px; top: 9px;
+  width: 8px; height: 8px; border-radius: 50%;
   background: var(--surface); border: 1.4px solid var(--muted-soft);
+  transition: background 200ms ease, border-color 200ms ease;
 }
-.step.done .step-pip { background: var(--purple); border-color: var(--purple); }
-.step.failed .step-pip { background: var(--red); border-color: var(--red); }
-.step.running .step-pip {
+.step.done > .step-pip { background: var(--purple); border-color: var(--purple); }
+.step.failed > .step-pip { background: var(--red); border-color: var(--red); }
+.step.running > .step-pip {
   border-color: var(--purple); background: var(--purple);
-  animation: pulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 0 0 var(--purple-subtle);
+  animation: step-live 1.6s ease-out infinite;
 }
+@keyframes step-live {
+  to { box-shadow: 0 0 0 7px rgba(113, 50, 245, 0); }
+}
+
 .step-body { min-width: 0; flex: 1; }
-.step-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.step-line {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  padding: 2px 0;
+}
 .step-label { font-size: 13.5px; color: var(--body); }
 .step-label.opens {
-  display: inline-flex; align-items: center; gap: 4px; padding: 0;
-  font-size: 13.5px; color: var(--body);
+  display: inline-flex; align-items: center; gap: 5px; padding: 0;
+  font-size: 13.5px; color: var(--body); text-align: left;
+  border-radius: 6px;
 }
+.step-label.opens .caret-icon {
+  transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
+  opacity: 0.55;
+}
+.step-label.opens .caret-icon.up { transform: rotate(90deg); opacity: 1; }
 .step-label.opens:hover { color: var(--purple); }
-.step.failed .step-label { color: var(--red); }
-.step-detail, .step-took {
+.step-label.opens:hover .caret-icon { opacity: 1; }
+.step.failed > .step-body .step-label { color: var(--red); }
+.step-detail, .step-took, .step-count {
   font-family: var(--mono); font-size: 11px; color: var(--muted-soft);
 }
+.step-count {
+  padding: 1px 7px; border-radius: 9999px;
+  background: var(--surface-hi); color: var(--muted);
+}
+
+/* evidence: the thinking, the file, the output */
 .step-evidence {
-  margin: 6px 0 8px; padding: 10px 12px; border-radius: 10px;
-  border: 1px solid var(--hairline-soft); background: var(--panel);
+  margin: 4px 0 8px; padding: 11px 13px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline-soft);
+  background: var(--panel);
+  animation: step-in 200ms ease both;
 }
 .step-evidence-title {
-  margin: 0 0 6px; font-size: 11px; font-weight: 700;
-  letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted-soft);
+  margin: 0 0 7px; font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.7px; text-transform: uppercase; color: var(--muted-soft);
 }
 .step-evidence pre {
-  margin: 0; max-height: 280px; overflow: auto;
-  font-family: var(--mono); font-size: 11.5px; line-height: 1.6;
-  color: var(--muted); white-space: pre-wrap; word-break: break-word;
+  margin: 0; max-height: 340px; overflow: auto;
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.65;
+  color: var(--body); white-space: pre-wrap; word-break: break-word;
+  scrollbar-width: thin;
 }
-.step-evidence.thinking pre { font-family: var(--ui); font-size: 13px; color: var(--muted); }
-.step-evidence.code pre, .step-evidence.output pre { color: var(--body); }
+.step-evidence.thinking {
+  border-left: 2px solid var(--purple-lift);
+  background: var(--purple-wash);
+}
+.step-evidence.thinking pre {
+  font-family: var(--ui); font-size: 13px; line-height: 1.6; color: var(--muted);
+  white-space: pre-wrap;
+}
+.step-evidence.code, .step-evidence.output { background: var(--code-bg); }
+.step-evidence.output pre { color: var(--muted); }
+
+/* nested work sits in from its parent, with its own spine */
+.steps[data-depth="1"], .steps[data-depth="2"], .steps[data-depth="3"] {
+  margin: 2px 0 6px;
+  padding-left: 2px;
+}
 
 /* ---------- the manager, working ---------- */
 .report-card.reviewing { border-left-color: var(--purple); }
@@ -1136,3 +1185,151 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
   border-left: 1px solid var(--hairline); color: var(--muted-soft);
 }
 .build-card-get:hover { background: var(--surface-hi); color: var(--purple); }
+
+/* ---------- the mark as a watermark ----------
+ * Large, faint, and behind the heading rather than beside it. The mask fades
+ * it out towards the bottom so it dissolves into the page instead of stopping
+ * on a hard edge. Same file, same shape — only scale and opacity change.
+ */
+.mark-watermark {
+  position: absolute;
+  top: -8%;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 0;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 42%, transparent 92%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 42%, transparent 92%);
+}
+.mark-watermark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.07;
+  user-select: none;
+}
+:root[data-theme="dark"] .mark-watermark img { opacity: 0.09; }
+.mark-watermark .mark-dark { display: none; }
+:root[data-theme="dark"] .mark-watermark .mark-light { display: none; }
+:root[data-theme="dark"] .mark-watermark .mark-dark { display: block; }
+
+/* The welcome column becomes the positioning context for the watermark, and
+   everything in it sits above it. */
+.welcome { position: relative; }
+.welcome > *:not(.mark-watermark) { position: relative; z-index: 1; }
+
+/* ---------- templates ----------
+ * A brief you can read before you commit to it. The preview is rendered from
+ * the same tokens the brief states, so the card shows the style on offer
+ * rather than a picture of something else.
+ */
+.templates { margin: 22px auto 0; max-width: var(--column); width: 100%; }
+.template-tabs {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;
+}
+.template-tabs button {
+  padding: 6px 13px; border-radius: 9999px;
+  border: 1px solid var(--hairline); background: var(--surface);
+  font-size: 12.5px; font-weight: 500; color: var(--muted);
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+.template-tabs button:hover { color: var(--ink); border-color: var(--purple-lift); }
+.template-tabs button.on {
+  background: var(--purple); border-color: transparent; color: #fff;
+}
+
+.template-cards {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;
+}
+.template-card {
+  display: block; width: 100%; padding: 0; text-align: left;
+  border: 1px solid var(--hairline); border-radius: 14px;
+  background: var(--surface); overflow: hidden;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.template-card:hover {
+  border-color: var(--purple-lift);
+  box-shadow: var(--shadow-lift);
+  transform: translateY(-2px);
+}
+.template-card:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
+.template-meta { display: block; padding: 10px 13px 12px; }
+.template-title {
+  display: block; font-size: 13.5px; font-weight: 600; color: var(--ink);
+}
+.template-blurb {
+  display: block; margin-top: 2px; font-size: 12px; line-height: 1.45; color: var(--muted-soft);
+}
+.template-note {
+  margin: 12px 0 0; font-size: 12px; color: var(--muted-soft); text-align: center;
+}
+
+/* the rendered preview */
+.template-preview {
+  display: block; position: relative; aspect-ratio: 16 / 10; overflow: hidden;
+  padding: 0 0 8px;
+}
+.tp-bar {
+  display: flex; align-items: center; gap: 4px;
+  padding: 6px 8px; border-bottom: 1px solid;
+}
+.tp-bar i { width: 5px; height: 5px; border-radius: 50%; }
+.tp-body {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 10px 11px;
+}
+.tp-body.tp-centre { align-items: center; text-align: center; justify-content: center; height: calc(100% - 22px); }
+.tp-head {
+  display: block; font-size: 15px; font-weight: 900; line-height: 1.02;
+  letter-spacing: -0.02em;
+}
+.tp-head .tp-line { display: block; }
+.tp-head em { font-style: normal; }
+.tp-head-sm { font-size: 12.5px; font-weight: 700; letter-spacing: -0.01em; }
+.tp-head-wide { font-size: 16px; letter-spacing: 0.24em; }
+.tp-sub {
+  display: block; font-size: 7.5px; line-height: 1.5;
+  font-family: var(--ui); max-width: 30ch;
+}
+.tp-cta {
+  align-self: flex-start; margin-top: 3px;
+  padding: 3px 9px; border-radius: 4px;
+  font-family: var(--ui); font-size: 7.5px; font-weight: 700;
+}
+.tp-rules { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.tp-rules i { display: block; height: 2.5px; border-radius: 2px; }
+
+.tp-chart {
+  display: flex; align-items: flex-end; gap: 3px;
+  height: 38px; margin-top: 4px;
+}
+.tp-chart i { flex: 1; border-radius: 1.5px 1.5px 0 0; }
+
+.tp-rows { display: flex; flex-direction: column; margin-top: 3px; }
+.tp-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 4px 0; border-bottom: 1px solid;
+  font-family: var(--ui); font-size: 8px;
+}
+.tp-row em { font-style: normal; }
+.tp-row b { font-variant-numeric: tabular-nums; }
+
+.tp-orbit {
+  position: relative; width: 44px; height: 44px; border-radius: 50%;
+  border: 1px dashed; margin-bottom: 4px;
+}
+.tp-orbit i {
+  position: absolute; top: -3px; left: 50%; width: 6px; height: 6px;
+  border-radius: 50%; transform: translateX(-50%);
+}
+
+.shape-split .tp-head, .shape-article .tp-head { font-weight: 400; letter-spacing: -0.01em; }
+
+@media (max-width: 900px) {
+  .template-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .template-cards { grid-template-columns: 1fr; }
+  .mark-watermark { top: -4%; }
+}

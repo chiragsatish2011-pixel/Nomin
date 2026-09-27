@@ -79,6 +79,8 @@ export interface SupervisorConfig {
   apiKey: string;
   /** No events for this long while running counts as stalled. */
   stallMs: number;
+  /** Backends to try when the primary seat will not answer. In order. */
+  fallbacks: string[];
 }
 
 /** Phrases that assert success — they must be backed by real events. */
@@ -145,7 +147,15 @@ export function createSupervisor(env = process.env): Supervisor {
     backend: env.NOMIN_SUPERVISOR_MODEL || SUPERVISOR.backend,
     endpoint: env.NOMIN_SUPERVISOR_URL || env.NOMIN_BASE_URL || SUPERVISOR.endpoint,
   };
-  return new Supervisor({ model, apiKey: key, stallMs: 45_000 });
+  // The 90B seat is the intended reviewer, but the provider serves it
+  // intermittently — it answers 504 for long stretches. Rather than let that
+  // turn into "the manager never approves anything", the review falls through
+  // to a smaller seat in the same family that is reliably available.
+  const fallbacks = (env.NOMIN_SUPERVISOR_FALLBACKS ?? SUPERVISOR_FALLBACKS.join(","))
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return new Supervisor({ model, apiKey: key, stallMs: 45_000, fallbacks });
 }
 
 export class Supervisor {
@@ -306,7 +316,39 @@ export class Supervisor {
    */
   private async ask(digest: TurnDigest, base: Verdict): Promise<Verdict | null> {
     this.lastFailure = null;
-    const provider = new NvidiaProvider(this.config.model, this.config.apiKey);
+    for (const backend of this.backends()) {
+      const judged = await this.askOne(digest, base, backend);
+      if (judged) return judged;
+    }
+    return null;
+  }
+
+  /**
+   * The manager's model, and what to fall back to.
+   *
+   * The 90B vision reviewer is the one this is designed around, but a provider
+   * lists models it cannot always serve — that seat answers 504 for minutes at
+   * a time. A manager that is merely slow to be available is a manager that
+   * never approves anything, so a second, smaller seat from the same family
+   * takes the review rather than leaving the work unjudged. Which one actually
+   * answered is recorded on the verdict.
+   */
+  private backends(): string[] {
+    const primary = this.config.model.backend ?? "";
+    const seen = new Set<string>();
+    return [primary, ...this.config.fallbacks].filter((backend) => {
+      if (!backend || seen.has(backend)) return false;
+      seen.add(backend);
+      return true;
+    });
+  }
+
+  private async askOne(
+    digest: TurnDigest,
+    base: Verdict,
+    backend: string,
+  ): Promise<Verdict | null> {
+    const provider = new NvidiaProvider({ ...this.config.model, backend }, this.config.apiKey);
     const seeing = Boolean(digest.screenshot) && this.canSee;
     const body: string | ContentPart[] = seeing
       ? [
@@ -357,9 +399,16 @@ export class Supervisor {
       // The signature. Anything short of the manager's own "verified" leaves
       // the work unapproved, and the interface will not call it finished.
       approved: parsed.status === "verified",
+      note:
+        backend === this.config.model.backend
+          ? undefined
+          : "The primary reviewer was unavailable; a standby seat reviewed this.",
     };
   }
 }
+
+/** Reviewers to fall through to, in order, when the primary will not answer. */
+const SUPERVISOR_FALLBACKS = ["meta/llama-3.2-11b-vision-instruct"];
 
 /** A failure reason worth showing: short, and never carrying a credential. */
 const shortReason = (message: string) =>
