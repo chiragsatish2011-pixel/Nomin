@@ -425,7 +425,7 @@ const TEXT_PROMPT = `You are Nomin's manager (Llama 3.2 90B Instruct). You revie
 
 ${VERDICT_SHAPE}
 
-The report covers: what was requested, what was produced, what is missing, and what to check next. End with an explicit approval line: either "APPROVED" or "NOT APPROVED: <reason>".`;
+The report covers: what was requested, what was produced, what is missing, and what to check next. If ANY requested detail is missing, truncated, or uses generic placeholders, you MUST reject it. End with an explicit approval line: either "APPROVED" or "NOT APPROVED: <reason>".`;
 
 const VISION_PROMPT = `You are Nomin's manager (Llama 3.2 90B Vision Instruct). You are shown what an engineering agent produced and a rendering of the result. Judge whether the delivered work actually matches the request. Your verdict is the approval gate: the worker must not tell the user the work is done until you return "verified". Never complain to the user; provide clear, constructive feedback so the agent can redo the work properly.
 
@@ -433,7 +433,7 @@ Look at the rendering and say what is really there: complete and presentable, or
 
 ${VERDICT_SHAPE}
 
-The report covers: what was requested, what the rendering actually shows, what is missing or broken, and what to fix next. Judge the rendering, not the intention. End with an explicit approval line: either "APPROVED" or "NOT APPROVED: <reason>".`;
+The report covers: what was requested, what the rendering actually shows, what is missing or broken, and what to fix next. Judge the rendering, not the intention. If ANY requested detail is missing, or the UI looks unstyled/broken, you MUST reject it. End with an explicit approval line: either "APPROVED" or "NOT APPROVED: <reason>".`;
 
 /** The digest the monitor sees: capped, structured, no private reasoning. */
 function renderDigest(digest: TurnDigest): string {
