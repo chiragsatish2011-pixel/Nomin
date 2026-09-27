@@ -1609,3 +1609,22 @@ html, body { overflow-x: hidden; }
   .welcome-badge { width: 46px !important; height: 46px !important; }
   .welcome h1 { font-size: clamp(20px, 6.6vw, 26px); }
 }
+
+/* Feedback Buttons */
+.feedback-btn { color: var(--muted); padding: 4px; border-radius: 6px; transition: color 0.15s ease, background 0.15s ease; }
+.feedback-btn:hover { color: var(--ink); background: var(--surface-hi); }
+
+/* --- World-Class UI Upgrades --- */
+.turn { animation: turn-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes turn-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.thinking-head { padding: 6px 12px; border-radius: 8px; transition: all 0.2s ease; }
+.thinking-head:hover { background: var(--surface-hi); }
+.thinking.live .thinking-head { background: rgba(113, 50, 245, 0.05); border: 1px solid rgba(113, 50, 245, 0.15); }
+.thinking.live .thinking-label { font-weight: 600; color: var(--purple); -webkit-text-fill-color: var(--purple); background: none; }
+
+.step-evidence { backdrop-filter: blur(8px); box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
+
+.actions { display: flex; gap: 4px; margin-top: 12px; align-items: center; }
+.feedback-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; background: transparent; color: var(--muted-soft); border-radius: 6px; cursor: pointer; transition: all 0.15s ease; }
+.feedback-btn:hover { background: var(--surface-hi); color: var(--ink); transform: scale(1.05); }

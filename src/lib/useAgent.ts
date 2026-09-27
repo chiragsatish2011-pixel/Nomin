@@ -184,7 +184,8 @@ export function useAgent() {
   const reset = useCallback(() => {
     abort.current?.abort();
     setSessionId(newSessionId());
-    setMessages([]);\n    clearLastSession();
+    setMessages([]);
+    clearLastSession();
     setEvents([]);
     setUsage(null);
     setWaitUntil(null);
