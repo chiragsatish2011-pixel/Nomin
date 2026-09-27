@@ -110,6 +110,7 @@ export async function handleReview(req: IncomingMessage, res: ServerResponse): P
       issues: [error instanceof Error ? error.message : "unknown"],
       evidence: [],
       usedModel: false,
+      approved: false,
     });
   }
 }
@@ -231,13 +232,23 @@ const MAX_READ_BYTES = 400_000;
 /** GET /api/health — what this deployment can actually do. */
 export function handleHealth(_req: IncomingMessage, res: ServerResponse): void {
   const serverless = isServerless();
+  const supervisor = createSupervisor();
   json(res, 200, {
     ok: true,
     // Never the key itself, and never the backend's name — only whether the
     // deployment is configured at all.
     worker: Boolean(process.env.NVIDIA_API_KEY),
-    manager: Boolean(process.env.NOMIN_SUPERVISOR_API_KEY),
-    vision: Boolean(process.env.NOMIN_VISION_API_KEY || process.env.NOMIN_SUPERVISOR_API_KEY),
+    // Asked of the manager itself rather than of one variable: it falls back
+    // through three credentials, so testing only the first reported a manager
+    // that was missing when one was configured, and vice versa.
+    manager: supervisor.mode === "model",
+    managerMode: supervisor.mode,
+    managerCanSee: supervisor.canSee,
+    vision: Boolean(
+      process.env.NOMIN_VISION_API_KEY ||
+        process.env.NOMIN_SUPERVISOR_API_KEY ||
+        process.env.NVIDIA_API_KEY,
+    ),
     doctors: [1, 2, 3, 4, 5, 6].filter((n) => process.env[`NOMIN_DOCTOR_${n}_API_KEY`]).length,
     environment: serverless ? "serverless" : "server",
     capabilities: {

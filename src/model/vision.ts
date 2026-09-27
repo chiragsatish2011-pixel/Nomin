@@ -53,15 +53,17 @@ const LANE = "vision";
 const scheduler = new CrpmScheduler({ [LANE]: { rpm: 30, concurrency: 2 } });
 
 function visionModel(env: NodeJS.ProcessEnv): { model: ModelDescriptor; key: string } | null {
-  // The monitor's multimodal model does this job too; it is already on its own
-  // credential, which is exactly what CRPM wants.
-  const key = env.NOMIN_VISION_API_KEY ?? env[SUPERVISOR.apiKeyEnv ?? ""] ?? "";
+  // Same fallback chain as the manager: its own key, then the manager key,
+  // then the worker key — so image/video reading works out of the box.
+  const key =
+    env.NOMIN_VISION_API_KEY ?? env[SUPERVISOR.apiKeyEnv ?? ""] ?? env.NVIDIA_API_KEY ?? "";
   if (!key) return null;
   return {
     model: {
       ...SUPERVISOR,
       name: "Nomin Vision",
-      backend: env.NOMIN_VISION_MODEL ?? SUPERVISOR.backend,
+      backend: env.NOMIN_VISION_MODEL ?? env.NOMIN_SUPERVISOR_MODEL ?? SUPERVISOR.backend,
+      endpoint: env.NOMIN_SUPERVISOR_URL ?? env.NOMIN_BASE_URL ?? SUPERVISOR.endpoint,
       maxOutputTokens: 700,
     },
     key,

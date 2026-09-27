@@ -4,7 +4,6 @@ import { Composer, type Mode } from "./components/Composer.js";
 import { describe as describeCheckpoint } from "./lib/checkpoints.js";
 import { Mark } from "./components/Mark.js";
 import { Markdown } from "./components/Markdown.js";
-import { ParticleOrb } from "./components/ParticleOrb.js";
 import { ReportCard } from "./components/ReportCard.js";
 import { ThinkingBlock } from "./components/ThinkingBlock.js";
 import { CommandPalette, type Command } from "./components/CommandPalette.js";
@@ -19,12 +18,23 @@ import { useMonitor, type MonitorState } from "./lib/useMonitor.js";
 import { formatAnswers, hasPartialBlock, parseQuestions } from "./lib/questions.js";
 import { readTheme, storeTheme, watchSystemTheme, type Theme } from "./lib/theme.js";
 import { useAgent, type ChatMessage, type Verdict } from "./lib/useAgent.js";
+import type { Build } from "./lib/workspace.js";
 import type { Plan, PlanStatus } from "./model/plan.js";
 
 const MODEL_NAME = "Trion 1.5";
 
 /** Repairs attempted per turn before the agent stops and reports honestly. */
 const MAX_REPAIRS = 2;
+
+/** A file-safe name taken from whatever the thing is called. */
+function slug(text: string): string {
+  const cleaned = text
+    .slice(0, 40)
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
+  return cleaned || "nomin";
+}
 
 const STARTERS = [
   "Build a landing page for a coffee shop",
@@ -70,6 +80,7 @@ export default function App() {
     workspaceFiles,
     workspace,
     addManagerNote,
+    recordVerdict,
     checkpoints,
     restoreCheckpoint,
     activeBuild,
@@ -113,17 +124,27 @@ export default function App() {
     setAttaching(true);
     try {
       const prepared = await Promise.all(Array.from(files).map((file) => prepare(file)));
+      // A re-uploaded name replaces the previous upload — the old code dropped
+      // the new file when the name already existed, so the stale preview stayed.
       setAttachments((current) => {
-        const names = new Set(current.map((item) => item.name));
-        return [...current, ...prepared.filter((item) => !names.has(item.name))];
+        const byName = new Map(current.map((item) => [item.name, item]));
+        for (const item of prepared) byName.set(item.name, item);
+        return [...byName.values()];
       });
     } finally {
       setAttaching(false);
     }
   }, []);
 
-  const removeAttachment = useCallback((name: string) => {
-    setAttachments((current) => current.filter((item) => item.name !== name));
+  /** A camera still has already been through prepare(); take it as it is. */
+  const addPrepared = useCallback((items: PreparedAttachment[]) => {
+    setAttachments((current) => [...current, ...items]);
+  }, []);
+
+  const removeAttachment = useCallback((idOrName: string) => {
+    setAttachments((current) =>
+      current.filter((item) => item.id !== idOrName && item.name !== idOrName),
+    );
   }, []);
 
   const submit = useCallback(() => {
@@ -179,13 +200,43 @@ export default function App() {
       ? workspace.files.map((file) => ({ path: file.path, content: file.content }))
       : readCanvas(messages).artifacts.map((file) => ({ path: file.name, content: file.code }));
     if (!files.length) return;
-    const name = (messages[0]?.content ?? "nomin")
-      .slice(0, 40)
-      .replace(/[^a-z0-9]+/gi, "-")
-      .replace(/^-|-$/g, "")
-      .toLowerCase();
-    download(createZip(files), `${name || "nomin"}.zip`);
+    download(createZip(files), `${slug(messages[0]?.content ?? "nomin")}.zip`);
   }, [messages, workspace.files]);
+
+  /**
+   * Download one build on its own.
+   *
+   * A session that produced a coffee shop and then an ice cream shop holds two
+   * separate things, and handing over the whole workspace would mix them. A
+   * build is its entry point plus the files it references, so that is exactly
+   * what goes in the archive — and its entry is renamed to index.html so the
+   * zip opens straight into the page it is.
+   */
+  const downloadBuild = useCallback(
+    (entry: string) => {
+      const build = workspace.builds.find((item) => item.entry === entry);
+      if (!build) return;
+      const wanted = new Set(build.files);
+      const files = workspace.files
+        .filter((file) => wanted.has(file.path))
+        .map((file) => ({
+          path: file.path === build.entry && !/(^|\/)index\.html?$/i.test(file.path)
+            ? "index.html"
+            : file.path,
+          content: file.content,
+        }));
+      if (!files.length) return;
+      download(createZip(files), `${slug(build.title || build.entry)}.zip`);
+    },
+    [workspace.builds, workspace.files],
+  );
+
+  /** Show one build, and nothing else, in the canvas. */
+  const openBuild = useCallback((entry: string) => {
+    setActiveBuild(entry);
+    setCanvasPinnedShut(false);
+    setCanvasOpen(true);
+  }, [setActiveBuild]);
 
   const canvas = useMemo(() => readCanvas(messages), [messages]);
   const monitor = useMonitor(messages, canvas, running, workspace, activeBuild);
@@ -197,12 +248,24 @@ export default function App() {
   useEffect(() => {
     if (running || monitor.status !== "done" || !monitor.verdict) return;
     const verdict = monitor.verdict;
+    // The manager's verdict belongs to the turn it judged, so it survives
+    // scrolling past: the badge on an old turn must still say what the
+    // manager decided, not the provisional evidence read the server made.
+    if (monitor.turn !== undefined) recordVerdict(monitor.turn, verdict);
     if (verdict.status !== "failed" && verdict.status !== "concerns") {
       // Work that was sent back and has now passed gets said out loud. This
       // is the only point at which the user hears about the round trip, and
       // they hear the outcome rather than the failure that started it.
-      if (repairs.current.consecutive > 0 && verdict.status === "verified") {
-        addManagerNote(`Checked and complete. ${verdict.summary}`);
+      // Approval is the manager's to give, and it is the manager that says so.
+      // The worker never closes a turn itself, so this line is the only place
+      // the work is called finished — and it appears only once the review has
+      // actually passed.
+      if (verdict.status === "verified" && verdict.usedModel) {
+        addManagerNote(
+          repairs.current.consecutive > 0
+            ? `Approved. The work came back, was fixed, and now checks out — ${verdict.summary}`
+            : `Approved — ${verdict.summary}`,
+        );
       }
       // Back to healthy: the next problem gets a full repair budget again.
       repairs.current = { turn: monitor.turn ?? -1, consecutive: 0 };
@@ -234,7 +297,7 @@ export default function App() {
     // see is the manager taking the work back, not an instruction they never
     // wrote — and the finished result once it has actually been checked.
     requestFix(brief, true);
-  }, [addManagerNote, messages.length, monitor, planStatus, requestFix, running]);
+  }, [addManagerNote, messages.length, monitor, planStatus, recordVerdict, requestFix, running]);
 
   /**
    * Conversation mode.
@@ -565,6 +628,10 @@ export default function App() {
               onApprovePlan={approveAndBuild}
               onChangePlan={sendPlanChanges}
               onFix={requestFix}
+              builds={workspace.builds}
+              activeBuild={activeBuild}
+              onOpenBuild={openBuild}
+              onDownloadBuild={downloadBuild}
             />
           ) : (
             <Welcome running={running} pick={setDraft} />
@@ -587,6 +654,7 @@ export default function App() {
               attaching={attaching}
               conversation={conversation}
               onToggleConversation={() => setConversation((on) => !on)}
+              onPrepared={addPrepared}
             />
             <p className="disclaimer">
               Trion 1.5 can make mistakes. Nomin verifies work against real evidence — check anything
@@ -613,7 +681,13 @@ export default function App() {
 function Welcome({ running, pick }: { running: boolean; pick: (text: string) => void }) {
   return (
     <div className="welcome">
-      <ParticleOrb size={120} count={480} active />
+      {/* The home card is the mark and nothing else. The particle orb used to
+          sit behind it, which put a second animated thing in the one place
+          that should be still — the logo is the identity here, so it stands
+          alone. The orb keeps its job in the chat, where work is live. */}
+      <div className="welcome-mark">
+        <Mark size={104} busy={running} />
+      </div>
       <h1>What are we building?</h1>
       <p>
         Describe the outcome. Nomin Code asks what it needs, plans it for your approval, then builds,
@@ -646,6 +720,10 @@ function Chat({
   onApprovePlan,
   onChangePlan,
   onFix,
+  builds,
+  activeBuild,
+  onOpenBuild,
+  onDownloadBuild,
 }: {
   messages: ChatMessage[];
   running: boolean;
@@ -660,6 +738,10 @@ function Chat({
   onApprovePlan: () => void;
   onChangePlan: (note: string) => void;
   onFix: (brief: string) => void;
+  builds: Build[];
+  activeBuild: string | null;
+  onOpenBuild: (entry: string) => void;
+  onDownloadBuild: (entry: string) => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -735,6 +817,19 @@ function Chat({
                 />
               )}
 
+              {/* Everything this session has built, as separate things. A new
+                  request writes a new entry point, so it becomes its own card
+                  rather than overwriting the last one; opening a card shows
+                  that build and only that build. */}
+              {i === messages.length - 1 && builds.length > 0 && (
+                <BuildCards
+                  builds={builds}
+                  active={activeBuild}
+                  onOpen={onOpenBuild}
+                  onDownload={onDownloadBuild}
+                />
+              )}
+
               {!running && i === messages.length - 1 && !message.error && (
                 <ReportCard monitor={monitor} onFix={onFix} fixing={running} />
               )}
@@ -749,6 +844,69 @@ function Chat({
   );
 }
 
+
+/**
+ * Everything this session has built, each as its own thing.
+ *
+ * A session is not one deliverable. Ask for a coffee shop and then an ice
+ * cream shop and you have two, and the second must not quietly replace the
+ * first: each writes its own entry point, so each gets a card. Opening one
+ * shows that build alone in the canvas — its preview and its files, not the
+ * session's whole file list — and each can be taken away on its own.
+ */
+function BuildCards({
+  builds,
+  active,
+  onOpen,
+  onDownload,
+}: {
+  builds: Build[];
+  active: string | null;
+  onOpen: (entry: string) => void;
+  onDownload: (entry: string) => void;
+}) {
+  const current = builds.some((build) => build.entry === active) ? active : builds[0]?.entry;
+  return (
+    <section className="build-cards">
+      <h4 className="build-cards-title">
+        {builds.length === 1 ? "What was built" : `${builds.length} things built in this session`}
+      </h4>
+      <ul>
+        {builds.map((build) => (
+          <li key={build.entry}>
+            <div className={`build-card${build.entry === current ? " on" : ""}`}>
+              <button
+                type="button"
+                className="build-card-open"
+                onClick={() => onOpen(build.entry)}
+                title={`Open ${build.entry} in the canvas`}
+              >
+                <span className="build-card-name">{build.title}</span>
+                <span className="build-card-meta">
+                  {build.entry} · {build.files.length} file{build.files.length === 1 ? "" : "s"}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="build-card-get"
+                onClick={() => onDownload(build.entry)}
+                title="Download this build on its own"
+              >
+                <DownloadIcon />
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+const DownloadIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 3v12M7.5 10.5 12 15l4.5-4.5M4.5 20h15" />
+  </svg>
+);
 
 /**
  * One line for the transcript, taken from the manager's own findings.
@@ -915,14 +1073,20 @@ function MessageActions({
       <button onClick={retry}>Retry</button>
       {verdict && (
         <span className={`verdict ${verdict.status}`} title={verdict.issues.join(" · ")}>
-          {verdict.status === "verified"
-            ? "Verified"
-            : verdict.status === "unverified"
-              ? "Unverified"
-              : verdict.status === "concerns"
-                ? "Concerns"
-                : "Failed"}
-          <em>{verdict.usedModel ? "supervisor" : "evidence"}</em>
+          {/* The badge says what the manager decided, in the manager's own
+              terms. "Verified" used to sit here on turns the manager had
+              never actually seen, which is precisely the claim it must not
+              make on the worker's behalf. */}
+          {verdict.approved
+            ? "Approved"
+            : verdict.status === "verified"
+              ? "Checks out · unapproved"
+              : verdict.status === "unverified"
+                ? "Not approved yet"
+                : verdict.status === "concerns"
+                  ? "Sent back"
+                  : "Rejected"}
+          <em>{verdict.usedModel ? "manager" : "evidence"}</em>
         </span>
       )}
     </div>

@@ -36,7 +36,7 @@ export function Orb3D({
   size = 72,
   active = true,
   count = 2600,
-  tint = ["#8b7bf7", "#38e8c8"],
+  tint = ["#9a6dff", "#7132f5"],
 }: Orb3DProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [live, setLive] = useState(false);

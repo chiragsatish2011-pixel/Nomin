@@ -43,6 +43,18 @@ export interface Verdict {
   sawRendering?: boolean;
   /** The written report, in markdown. Present when the model pass ran. */
   report?: string;
+  /**
+   * The approval gate. Only the manager sets this, and only on "verified".
+   * Nothing downstream may present work as finished while it is false — that
+   * is the whole contract between the worker and its reviewer.
+   */
+  approved: boolean;
+  /**
+   * Why the model pass did not run, when it did not. Kept deliberately free of
+   * credentials, endpoints and backend ids; it says which stage gave up, so a
+   * deployment with a silent manager is diagnosable instead of mysterious.
+   */
+  note?: string;
 }
 
 /** The compact record a turn leaves behind. Kept small on purpose. */
@@ -118,11 +130,20 @@ const WORK_EVENTS = new Set([
 ]);
 
 export function createSupervisor(env = process.env): Supervisor {
-  const key = env[SUPERVISOR.apiKeyEnv ?? "NOMIN_SUPERVISOR_API_KEY"] ?? "";
+  // The manager must actually run. It prefers its own key, then the vision
+  // key, then the worker's — evidence-only is the last resort, not the first
+  // accident. `||` rather than `??` on purpose: a variable set to the empty
+  // string is an unset variable, and `??` would stop on it and leave the
+  // manager silently disabled with a key sitting right behind it.
+  const key =
+    env[SUPERVISOR.apiKeyEnv ?? "NOMIN_SUPERVISOR_API_KEY"] ||
+    env.NOMIN_VISION_API_KEY ||
+    env.NVIDIA_API_KEY ||
+    "";
   const model: ModelDescriptor = {
     ...SUPERVISOR,
-    backend: env.NOMIN_SUPERVISOR_MODEL ?? SUPERVISOR.backend,
-    endpoint: env.NOMIN_SUPERVISOR_URL ?? SUPERVISOR.endpoint,
+    backend: env.NOMIN_SUPERVISOR_MODEL || SUPERVISOR.backend,
+    endpoint: env.NOMIN_SUPERVISOR_URL || env.NOMIN_BASE_URL || SUPERVISOR.endpoint,
   };
   return new Supervisor({ model, apiKey: key, stallMs: 45_000 });
 }
@@ -153,19 +174,48 @@ export class Supervisor {
     return didWork || Boolean(digest.files?.length) || claimsSuccess(digest.answer);
   }
 
-  /** Evidence pass, then — only if needed and configured — a model review. */
+  /**
+   * Evidence pass, then — only if needed and configured — a model review.
+   *
+   * A verdict that never reached the model is never approved, however clean
+   * the evidence looks: approval is the manager's signature, and the evidence
+   * pass cannot forge it.
+   */
   async review(digest: TurnDigest): Promise<Verdict> {
     const verdict = this.inspect(digest);
-    if (verdict.status === "failed" || !this.shouldReview(digest)) return verdict;
+    if (verdict.status === "failed") {
+      return { ...verdict, note: "Settled on evidence; the manager was not asked." };
+    }
+    if (!this.shouldReview(digest)) {
+      return {
+        ...verdict,
+        note:
+          this.mode === "model"
+            ? "Nothing substantial to review in this turn."
+            : "No manager credentials on this deployment — evidence only.",
+      };
+    }
 
     try {
       const judged = await this.ask(digest, verdict);
-      return judged ?? verdict;
-    } catch {
-      // A monitor outage must never fail the user's turn.
-      return { ...verdict, issues: [...verdict.issues, "Monitor unavailable"] };
+      if (judged) return judged;
+      return {
+        ...verdict,
+        note: this.lastFailure ?? "The manager returned nothing readable.",
+      };
+    } catch (error) {
+      // A manager outage must never fail the user's turn — but it must also
+      // never be mistaken for approval.
+      return {
+        ...verdict,
+        issues: [...verdict.issues, "The manager could not be reached"],
+        note: error instanceof Error ? shortReason(error.message) : "The manager could not run.",
+      };
     }
   }
+
+  /** Why the last model pass gave up. Read once, by `review`. */
+  private lastFailure: string | null = null;
 
   /** The free pass: what the event log and the answer themselves prove. */
   inspect(digest: TurnDigest): Verdict {
@@ -179,6 +229,7 @@ export class Supervisor {
         issues: ["Worker finished without output"],
         evidence: ["answer length 0"],
         usedModel: false,
+        approved: false,
       };
     }
 
@@ -190,6 +241,7 @@ export class Supervisor {
         issues: digest.runtime.errors,
         evidence: ["ran the page"],
         usedModel: false,
+        approved: false,
       };
     }
 
@@ -226,7 +278,7 @@ export class Supervisor {
     }
 
     if (issues.length) {
-      return { status: "concerns", summary: issues[0]!, issues, evidence, usedModel: false };
+      return { status: "concerns", summary: issues[0]!, issues, evidence, usedModel: false, approved: false };
     }
 
     // No evidence of verification is not the same as verified.
@@ -241,6 +293,9 @@ export class Supervisor {
             : "Answered; nothing to verify against",
       issues: [],
       evidence,
+      // Evidence alone never approves. Only the manager's own "verified"
+      // does, which is what stops a turn calling itself done unreviewed.
+      approved: false,
       usedModel: false,
     };
   }
@@ -250,6 +305,7 @@ export class Supervisor {
    * the only way to tell a finished page from a skeleton that merely parses.
    */
   private async ask(digest: TurnDigest, base: Verdict): Promise<Verdict | null> {
+    this.lastFailure = null;
     const provider = new NvidiaProvider(this.config.model, this.config.apiKey);
     const seeing = Boolean(digest.screenshot) && this.canSee;
     const body: string | ContentPart[] = seeing
@@ -269,13 +325,27 @@ export class Supervisor {
       messages,
       maxTokens: this.config.model.maxOutputTokens ?? 900,
       temperature: 0,
+      // This model has no private reasoning channel to spend the budget on,
+      // and a verdict is a short structured answer, not a deliberation.
+      thinking: false,
     })) {
       if (event.type === "delta") raw += event.text;
-      if (event.type === "error") return null;
+      if (event.type === "error") {
+        this.lastFailure = event.message || "The manager model refused the request.";
+        return null;
+      }
+    }
+
+    if (!raw.trim()) {
+      this.lastFailure = "The manager model answered with nothing.";
+      return null;
     }
 
     const parsed = parseVerdict(raw);
-    if (!parsed) return null;
+    if (!parsed) {
+      this.lastFailure = "The manager answered, but not in a shape that could be read.";
+      return null;
+    }
     return {
       status: parsed.status,
       summary: parsed.summary || base.summary,
@@ -284,28 +354,36 @@ export class Supervisor {
       usedModel: true,
       sawRendering: seeing,
       report: parsed.report,
+      // The signature. Anything short of the manager's own "verified" leaves
+      // the work unapproved, and the interface will not call it finished.
+      approved: parsed.status === "verified",
     };
   }
 }
 
+/** A failure reason worth showing: short, and never carrying a credential. */
+const shortReason = (message: string) =>
+  message.replace(/(key|token|bearer)[^\s]*/gi, "").trim().slice(0, 140) ||
+  "The manager could not run.";
+
 const VERDICT_SHAPE = `Reply with JSON only:
 {"status":"verified|concerns|failed|unverified","summary":"one short line","issues":["..."],"report":"markdown, 4-8 short lines"}
 
-"verified" needs real evidence. "unverified" means it looks fine but nothing proves it. "concerns" means missing requirements, unresolved failures or unsupported claims. "failed" means it was not delivered. Be strict and brief.`;
+"verified" needs real evidence AND means the manager approves — only then may the worker say the work is done. "unverified" means it looks fine but nothing proves it — do NOT approve yet. "concerns" means missing requirements, unresolved failures or unsupported claims — send back with specifics. "failed" means it was not delivered. Be strict and brief.`;
 
-const TEXT_PROMPT = `You are Nomin's manager. You review an engineering agent's work and judge only whether it was actually delivered — you never do the work yourself. Never complain to the user; provide clear, constructive feedback so the agent can redo the work properly.
+const TEXT_PROMPT = `You are Nomin's manager (Llama 3.2 90B Instruct). You review an engineering agent's work and judge only whether it was actually delivered — you never do the work yourself. Your verdict is the approval gate: the worker must not tell the user the work is done until you return "verified". Never complain to the user; provide clear, constructive feedback so the agent can redo the work properly.
 
 ${VERDICT_SHAPE}
 
-The report covers: what was requested, what was produced, what is missing, and what to check next.`;
+The report covers: what was requested, what was produced, what is missing, and what to check next. End with an explicit approval line: either "APPROVED" or "NOT APPROVED: <reason>".`;
 
-const VISION_PROMPT = `You are Nomin's manager. You are shown what an engineering agent produced and a rendering of the result. Judge whether the delivered work actually matches the request. Never complain to the user; provide clear, constructive feedback so the agent can redo the work properly.
+const VISION_PROMPT = `You are Nomin's manager (Llama 3.2 90B Vision Instruct). You are shown what an engineering agent produced and a rendering of the result. Judge whether the delivered work actually matches the request. Your verdict is the approval gate: the worker must not tell the user the work is done until you return "verified". Never complain to the user; provide clear, constructive feedback so the agent can redo the work properly.
 
 Look at the rendering and say what is really there: complete and presentable, or a skeleton — placeholder text, unstyled elements, collapsed layout, missing sections, overlapping or unreadable content. The RUNTIME line says what happened when the page was actually executed; a page that threw is not verified no matter how it looks.
 
 ${VERDICT_SHAPE}
 
-The report covers: what was requested, what the rendering actually shows, what is missing or broken, and what to fix next. Judge the rendering, not the intention.`;
+The report covers: what was requested, what the rendering actually shows, what is missing or broken, and what to fix next. Judge the rendering, not the intention. End with an explicit approval line: either "APPROVED" or "NOT APPROVED: <reason>".`;
 
 /** The digest the monitor sees: capped, structured, no private reasoning. */
 function renderDigest(digest: TurnDigest): string {
@@ -335,9 +413,61 @@ function renderDigest(digest: TurnDigest): string {
   ].join("\n\n");
 }
 
-function parseVerdict(
-  raw: string,
-): { status: VerificationStatus; summary: string; issues: string[]; report?: string } | null {
+type ParsedVerdict = {
+  status: VerificationStatus;
+  summary: string;
+  issues: string[];
+  report?: string;
+};
+
+const STATUSES: VerificationStatus[] = ["verified", "concerns", "failed", "unverified"];
+
+/**
+ * Read the manager's answer.
+ *
+ * JSON is what it is asked for, and the strict path is tried first. But a
+ * reviewer that writes its verdict in a sentence has still reviewed the work,
+ * and throwing that away meant every such turn came back "the manager could
+ * not run" — which is how a working manager looked broken. So a prose answer
+ * is salvaged from its approval line rather than discarded.
+ */
+function parseVerdict(raw: string): ParsedVerdict | null {
+  return parseJsonVerdict(raw) ?? parseProseVerdict(raw);
+}
+
+function parseProseVerdict(raw: string): ParsedVerdict | null {
+  const text = raw.trim();
+  if (!text) return null;
+  const lower = text.toLowerCase();
+
+  // The explicit approval line the prompt asks for, when it is all there is.
+  const notApproved = /\bnot approved\b/.test(lower);
+  const approved = !notApproved && /\bapproved\b/.test(lower);
+
+  const named = STATUSES.find((status) =>
+    new RegExp(`\\b(status\\s*[:=]\\s*)?${status}\\b`).test(lower),
+  );
+  const status: VerificationStatus | null = notApproved
+    ? (named && named !== "verified" ? named : "concerns")
+    : approved
+      ? "verified"
+      : (named ?? null);
+  if (!status) return null;
+
+  // Bulleted lines are the findings; the first ordinary sentence is the summary.
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const issues = lines
+    .filter((line) => /^[-*•]\s+/.test(line))
+    .map((line) => line.replace(/^[-*•]\s+/, "").slice(0, 200))
+    .slice(0, 5);
+  const summary =
+    lines.find((line) => !/^[-*•#]/.test(line) && line.length > 12)?.slice(0, 160) ??
+    (status === "verified" ? "The manager approved the work." : "The manager sent the work back.");
+
+  return { status, summary, issues, report: text.slice(0, 2400) };
+}
+
+function parseJsonVerdict(raw: string): ParsedVerdict | null {
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
   if (start === -1 || end <= start) return null;
@@ -349,7 +479,7 @@ function parseVerdict(
       report?: string;
     };
     const status = parsed.status as VerificationStatus | undefined;
-    if (!status || !["verified", "concerns", "failed", "unverified"].includes(status)) return null;
+    if (!status || !STATUSES.includes(status)) return null;
     return {
       status,
       summary: (parsed.summary ?? "").slice(0, 160),

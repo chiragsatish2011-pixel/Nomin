@@ -24,6 +24,8 @@ export interface Frame {
 }
 
 export interface PreparedAttachment {
+  /** Unique per upload — two files may share a name and must not collide. */
+  id: string;
   name: string;
   kind: AttachmentKind;
   bytes: number;
@@ -68,7 +70,15 @@ export function classify(file: File): AttachmentKind {
 
 export async function prepare(file: File): Promise<PreparedAttachment> {
   const kind = classify(file);
-  const base = { name: file.name, kind, bytes: file.size, frames: [] as Frame[] };
+  // A fresh id per upload: re-uploading the same name must replace the
+  // previous upload, never show the stale one.
+  const base = {
+    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    name: file.name,
+    kind,
+    bytes: file.size,
+    frames: [] as Frame[],
+  };
 
   try {
     if (kind === "image") {

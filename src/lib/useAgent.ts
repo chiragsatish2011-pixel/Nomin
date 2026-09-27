@@ -54,6 +54,13 @@ export interface Verdict {
   sawRendering?: boolean;
   /** The monitor's written report, in markdown. */
   report?: string;
+  /**
+   * The manager's signature. Only its own "verified" sets this, and until it
+   * does the interface must not present the turn as finished.
+   */
+  approved?: boolean;
+  /** Why the manager pass did not run, when it did not. */
+  note?: string;
 }
 
 export interface WorkspaceFileRef {
@@ -229,6 +236,28 @@ export function useAgent() {
    * joins the history, because the model does not need to be told what its
    * reviewer said to the user about it.
    */
+  /**
+   * Record the manager's verdict against the turn it judged.
+   *
+   * The server attaches its own evidence-only verdict as the turn streams;
+   * the manager's real one arrives afterwards, from the client, once the
+   * result has been rendered and run. Without this the transcript kept the
+   * provisional verdict for ever, so a turn the manager had approved still
+   * carried "not approved yet" once it scrolled out of the live slot.
+   */
+  const recordVerdict = useCallback((turn: number, verdict: Verdict) => {
+    setMessages((prev) => {
+      const target = prev[turn];
+      if (!target || target.role !== "assistant") return prev;
+      if (target.verdict?.approved === verdict.approved && target.verdict?.summary === verdict.summary) {
+        return prev;
+      }
+      const next = [...prev];
+      next[turn] = { ...target, verdict };
+      return next;
+    });
+  }, []);
+
   const addManagerNote = useCallback((text: string) => {
     setMessages((prev) => {
       const last = prev[prev.length - 1];
@@ -253,7 +282,10 @@ export function useAgent() {
       internal = false,
     ) => {
       const prompt = text.trim();
-      if (!prompt || abort.current) return;
+      // Attachments on their own are a real request — dropping in a screenshot
+      // and pressing send should work without typing a word. Only a turn with
+      // nothing at all in it is refused.
+      if ((!prompt && !attachments?.length) || abort.current) return;
 
       // Anything visual is read first: Trion cannot see, so the frames become
       // a description before the turn begins, and the description is what
@@ -279,7 +311,7 @@ export function useAgent() {
         ...messages.filter((message) => !message.manager),
         {
           role: "user",
-          content: prompt,
+          content: prompt || attachmentOnlyRequest(attachments ?? []),
           at: now,
           internal: internal || undefined,
           attachments: attachments?.map((item) => ({
@@ -479,11 +511,29 @@ ${content}` }
     workspaceFiles,
     workspace,
     addManagerNote,
+    recordVerdict,
     checkpoints,
     restoreCheckpoint,
     activeBuild,
     setActiveBuild,
   };
+}
+
+/**
+ * What to ask when the user attached something and typed nothing. Sending an
+ * empty string would leave the model with a description and no question.
+ */
+function attachmentOnlyRequest(attachments: PreparedAttachment[]): string {
+  const kinds = [...new Set(attachments.map((item) => item.kind))];
+  const what =
+    kinds.length === 1 && kinds[0] === "image"
+      ? attachments.length === 1
+        ? "this image"
+        : "these images"
+      : kinds.length === 1 && kinds[0] === "video"
+        ? "this video"
+        : "what I attached";
+  return `Look at ${what} and tell me what you see. If it implies something to build, say what you would build.`;
 }
 
 /** One line saying what was actually taken from an attachment. */

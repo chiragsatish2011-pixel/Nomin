@@ -1,52 +1,26 @@
 /**
- * The Nomin mark.
+ * The Nomin mark — the official logo file, and nothing around it.
  *
- * A single glyph built from the work tree itself: a head node with two
- * branches descending from it. It is the product's own diagram at 24px — quiet
- * at rest, and the branches light with the aurora while the agent is working.
+ * `public/logo-mark.png` is the supplied artwork with its transparent padding
+ * trimmed and re-centred: every pixel of the glyph is the original file's.
+ * There is no tile, plate or placeholder behind it — the mark stands on the
+ * page on its own.
+ *
+ * The supplied glyph is white, which disappears on a light background, so the
+ * light theme is served the same file with its ink set to the brand purple.
+ * The alpha channel — and therefore the shape — is byte-identical between the
+ * two; only the colour of the ink differs. Nothing is redrawn.
  */
 export function Mark({ size = 28, busy = false }: { size?: number; busy?: boolean }) {
-  const id = `mark-${size}${busy ? "-busy" : ""}`;
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      <defs>
-        <linearGradient id={`${id}-a`} x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#855bfb" />
-          <stop offset="0.6" stopColor="#7132f5" />
-          <stop offset="1" stopColor="#2ed3c6" />
-        </linearGradient>
-      </defs>
-
-      <rect x="0.5" y="0.5" width="31" height="31" rx="9" fill="var(--purple-subtle)" />
-
-      {/* spine */}
-      <path
-        d="M11 9v11a2 2 0 0 0 2 2h2"
-        stroke={`url(#${id}-a)`}
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        fill="none"
-      />
-      <path
-        d="M11 14h3"
-        stroke="var(--muted-soft)"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        fill="none"
-      />
-
-      {/* head and branch nodes */}
-      <circle cx="11" cy="8" r="3" fill={`url(#${id}-a)`}>
-        {busy && (
-          <animate attributeName="r" values="3;3.6;3" dur="1.8s" repeatCount="indefinite" />
-        )}
-      </circle>
-      <circle cx="16" cy="14" r="2" fill="var(--muted-soft)" />
-      <circle cx="17" cy="22" r="2" fill={`url(#${id}-a)`}>
-        {busy && (
-          <animate attributeName="opacity" values="1;0.35;1" dur="1.8s" repeatCount="indefinite" />
-        )}
-      </circle>
-    </svg>
+    <span
+      className={`mark${busy ? " busy" : ""}`}
+      style={{ width: size, height: size }}
+      aria-label="Nomin"
+      role="img"
+    >
+      <img className="mark-light" src="/logo-mark-purple.png" alt="" aria-hidden="true" draggable={false} />
+      <img className="mark-dark" src="/logo-mark.png" alt="" aria-hidden="true" draggable={false} />
+    </span>
   );
 }

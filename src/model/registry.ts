@@ -120,28 +120,32 @@ export const FRET_5: ModelDescriptor = {
 };
 
 /**
- * The supervisor seat. It is intentionally a smaller, cheaper model on its own
- * credentials: reviewing a digest is far less work than producing one, and
- * keeping it on a separate key means review traffic never eats the worker's
- * rate limit. Leave `NOMIN_SUPERVISOR_API_KEY` unset and Nomin Code reviews on
- * local evidence alone — no second model, no extra cost.
+ * The supervisor seat — Nomin's Manager AI.
+ *
+ * Llama 3.2 90B Vision Instruct: multimodal reviewer on its own credentials,
+ * so it can look at renderings as well as read the record. Reviewing a digest
+ * is far less work than producing one, and keeping it on a separate key means
+ * review traffic never eats the worker's rate limit. Leave
+ * `NOMIN_SUPERVISOR_API_KEY` unset and Nomin Code falls back to the worker key,
+ * then to local evidence alone — no second model, no extra cost.
  */
 export const SUPERVISOR: ModelDescriptor = {
-  name: "Nomin Monitor",
+  name: "Nomin Manager",
   role: "supervisor",
   status: "available",
-  backend: backendOf("NOMIN_VISION_MODEL"),
+  backend: backendOf("NOMIN_SUPERVISOR_MODEL", "meta/llama-3.2-90b-vision-instruct"),
   provider: "nvidia",
-  endpoint: endpointOf(),
+  endpoint: endpointOf("https://integrate.api.nvidia.com/v1"),
   apiKeyEnv: "NOMIN_SUPERVISOR_API_KEY",
   contextTokens: 128_000,
   maxOutputTokens: 900,
-  capabilities: { tools: false, streaming: true, reasoning: true, vision: true },
+  capabilities: { tools: false, streaming: true, reasoning: false, vision: true },
   retry: { ...DEFAULT_RETRY, maxAttempts: 4, baseDelayMs: 1500 },
   timeoutMs: 90_000,
   notes:
-    "Multimodal reviewer: reads a compact turn digest and, when the work is " +
-    "previewable, looks at a rendering of it. Never writes code or runs tools.",
+    "Llama 3.2 90B Vision Instruct reviewer: reads a compact turn digest and, " +
+    "when the work is previewable, looks at a rendering of it. Never writes code or runs tools. " +
+    "Its approval gates the worker — Nomin must not claim done until it passes.",
 };
 
 export const MODELS: Record<string, ModelDescriptor> = {

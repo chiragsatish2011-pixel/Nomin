@@ -185,10 +185,18 @@ export async function* runTurn(options: TurnOptions): AsyncGenerator<TurnFrame> 
 
         case "delta": {
           if (state.thinking) {
+            // The reasoning travels with the event that closes the row, and
+            // this is the branch that closes it on almost every real turn —
+            // the model starts answering, so thinking ends here rather than at
+            // the end of the pass. It used to close empty, which is why the
+            // finished step had nothing to open and the thoughts were lost.
             yield tree({
               type: "thinking.completed",
               id: `thinking-${pass}`,
               label: "Thought through it",
+              body: reasoning.trim() || undefined,
+              bodyKind: "thinking",
+              bodyTitle: "What it worked through",
             });
             state.thinking = false;
           }

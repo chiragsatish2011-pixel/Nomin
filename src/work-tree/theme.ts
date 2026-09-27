@@ -4,7 +4,7 @@ import type { NodeKind, NodeState } from "./events.js";
  * Nomin Code runs on the Kraken design system: white surfaces, Kraken Purple
  * as the primary, 12px radii, Kraken-Brand / Kraken-Product type.
  *
- * `aurora` is the one addition — a moving purple-to-cyan gradient used for
+ * `aurora` is the one addition — a moving purple gradient used for
  * anything that is *live* (the thinking head, an active branch). It is drawn
  * from the Kraken purple scale so it reads as brand energy, not decoration.
  */
@@ -30,25 +30,25 @@ export interface Theme {
 export const krakenAurora: Theme = {
   name: "kraken-aurora",
   surface: "#ffffff",
-  surfaceSoft: "#faf9ff",
-  hairline: "#dedee5",
-  ink: "#101114",
-  muted: "#686b82",
-  mutedSoft: "#9497a9",
+  surfaceSoft: "#faf7ff",
+  hairline: "#ddd6f0",
+  ink: "#16102a",
+  muted: "#4b4463",
+  mutedSoft: "#8b83ad",
   accent: "#7132f5",
   aurora: [
     { at: 0, color: "#7132f5" },
-    { at: 0.34, color: "#855bfb" },
-    { at: 0.58, color: "#5b1ecf" },
-    { at: 0.8, color: "#2ed3c6" },
+    { at: 0.34, color: "#9a6dff" },
+    { at: 0.58, color: "#4a14b5" },
+    { at: 0.8, color: "#b79cff" },
     { at: 1, color: "#7132f5" },
   ],
-  glow: "rgba(133,91,251,0.28)",
+  glow: "rgba(154,109,255,0.30)",
   states: {
-    pending: "#9497a9",
+    pending: "#8b83ad",
     active: "#7132f5",
-    waiting: "#5741d8",
-    done: "#149e61",
+    waiting: "#6b4ae0",
+    done: "#5b28c9",
     failed: "#c93a3a",
   },
   fontDisplay: '"Kraken-Brand", "IBM Plex Sans", Helvetica, Arial, sans-serif',
@@ -60,25 +60,25 @@ export const krakenAurora: Theme = {
 export const krakenDark: Theme = {
   ...krakenAurora,
   name: "kraken-aurora-dark",
-  surface: "#101114",
-  surfaceSoft: "#17181d",
-  hairline: "#2a2c36",
-  ink: "#f5f5f8",
-  muted: "#9497a9",
-  mutedSoft: "#686b82",
+  surface: "#191130",
+  surfaceSoft: "#120c22",
+  hairline: "#2c2247",
+  ink: "#f4f1fc",
+  muted: "#a49cc4",
+  mutedSoft: "#766e96",
   aurora: [
-    { at: 0, color: "#855bfb" },
-    { at: 0.34, color: "#a07dff" },
+    { at: 0, color: "#9a6dff" },
+    { at: 0.34, color: "#c0a6ff" },
     { at: 0.58, color: "#7132f5" },
-    { at: 0.82, color: "#2ed3c6" },
-    { at: 1, color: "#855bfb" },
+    { at: 0.82, color: "#b79cff" },
+    { at: 1, color: "#9a6dff" },
   ],
-  glow: "rgba(133,91,251,0.4)",
+  glow: "rgba(154,109,255,0.42)",
   states: {
-    pending: "#686b82",
-    active: "#855bfb",
-    waiting: "#7b6cf0",
-    done: "#1fc17a",
+    pending: "#766e96",
+    active: "#9a6dff",
+    waiting: "#8464ef",
+    done: "#b79cff",
     failed: "#e05a5a",
   },
 };

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listen, voiceSupport } from "../lib/voice.js";
-import type { PreparedAttachment } from "../lib/media.js";
+import { cameraSupport, captureStill, openCamera, stillToFile, stopStream } from "../lib/camera.js";
+import { prepare, type PreparedAttachment } from "../lib/media.js";
 
 export type Mode = "quick" | "balanced" | "deep";
 
@@ -14,6 +15,13 @@ export const MicIcon = () => (
 const WaveIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
     <path d="M4 12v1M8 8v8M12 5v14M16 8v8M20 12v1" />
+  </svg>
+);
+
+const CameraIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 8h3l2-2.5h6L17 8h3v11H4V8Z" />
+    <circle cx="12" cy="13" r="3.2" />
   </svg>
 );
 
@@ -56,6 +64,7 @@ export function Composer({
   attaching,
   conversation,
   onToggleConversation,
+  onPrepared,
 }: {
   draft: string;
   setDraft: (value: string) => void;
@@ -68,19 +77,27 @@ export function Composer({
   placeholder: string;
   attachments: PreparedAttachment[];
   onAttach: (files: FileList | null) => void;
-  onRemoveAttachment: (name: string) => void;
+  onRemoveAttachment: (id: string) => void;
   attaching: boolean;
   /** Hands-free mode: it listens, sends, speaks, and listens again. */
   conversation: boolean;
   onToggleConversation: () => void;
+  /** Direct insert for camera stills that already went through prepare(). */
+  onPrepared?: (items: PreparedAttachment[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [hearing, setHearing] = useState(false);
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [capturing, setCapturing] = useState(false);
+  const streamRef = useRef<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const micRef = useRef<{ stop: () => void; abort: () => void } | null>(null);
   const support = useRef(voiceSupport()).current;
+  const cam = useRef(cameraSupport()).current;
 
   // Dictation fills the box; it never sends on its own, because a stray noise
   // should not start a build.
@@ -115,6 +132,60 @@ export function Composer({
   useEffect(() => () => micRef.current?.abort(), []);
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Camera lifecycle: open on demand, always release the tracks on close.
+  useEffect(() => {
+    if (!cameraOpen) return;
+    let live = true;
+    openCamera()
+      .then((stream) => {
+        if (!live) {
+          stopStream(stream);
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) videoRef.current.srcObject = stream;
+      })
+      .catch(() => {
+        if (live) {
+          setCameraError("Could not open the camera. Check the browser permission.");
+          setCameraOpen(false);
+        }
+      });
+    return () => {
+      live = false;
+      if (streamRef.current) {
+        stopStream(streamRef.current);
+        streamRef.current = null;
+      }
+    };
+  }, [cameraOpen]);
+
+  const takePhoto = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const still = captureStill(video);
+    if (!still) {
+      setCameraError("Nothing to capture yet — wait for the video to start.");
+      return;
+    }
+    setCapturing(true);
+    try {
+      const file = stillToFile(still, 1);
+      if (!file) return;
+      const item = await prepare(file);
+      if (onPrepared) onPrepared([item]);
+      else {
+        // Fallback: emulate a file pick so App's attach path still runs.
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        onAttach(transfer.files);
+      }
+      setCameraOpen(false);
+    } finally {
+      setCapturing(false);
+    }
+  };
+
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => {
@@ -139,10 +210,25 @@ export function Composer({
         {(attachments.length > 0 || attaching) && (
           <ul className="attachments">
             {attachments.map((item) => (
-              <li key={item.name} className={item.problem ? "attachment problem" : "attachment"}>
+              <li key={item.id} className={item.problem ? "attachment problem" : "attachment"}>
+                {item.frames[0]?.dataUrl ? (
+                  <img
+                    className="attachment-thumb"
+                    src={item.frames[0].dataUrl}
+                    alt=""
+                    width={28}
+                    height={28}
+                  />
+                ) : null}
                 <span className="attachment-kind">{label(item)}</span>
-                <span className="attachment-name">{item.name}</span>
-                <button onClick={() => onRemoveAttachment(item.name)} title="Remove" type="button">
+                <span className="attachment-name" title={item.name}>
+                  {item.name}
+                </span>
+                <button
+                  onClick={() => onRemoveAttachment(item.id)}
+                  title="Remove"
+                  type="button"
+                >
                   ✕
                 </button>
               </li>
@@ -151,11 +237,36 @@ export function Composer({
           </ul>
         )}
 
+        {cameraOpen && (
+          <div className="camera-box">
+            <video ref={videoRef} autoPlay playsInline muted />
+            {cameraError && <p className="voice-note">{cameraError}</p>}
+            <div className="camera-actions">
+              <button type="button" className="ghost" onClick={() => setCameraOpen(false)}>
+                Close
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={capturing}
+                onClick={() => void takePhoto()}
+              >
+                {capturing ? "Reading…" : "Capture — Nomin will see this"}
+              </button>
+            </div>
+          </div>
+        )}
+
         <input
           ref={fileRef}
           type="file"
           multiple
           hidden
+          // Named so the picker leads with what Nomin can genuinely read:
+          // images and video become frames for the vision pass, documents and
+          // text become words. `accept` is a hint, not a lock — anything else
+          // still attaches and says plainly that it was not read.
+          accept="image/*,video/*,audio/*,text/*,.md,.json,.csv,.ts,.tsx,.js,.jsx,.css,.html,.py,.sh,.yml,.yaml,.pdf,.docx,.pptx,.xlsx"
           onChange={(event) => {
             onAttach(event.target.files);
             event.target.value = "";
@@ -210,6 +321,20 @@ export function Composer({
             +
           </button>
 
+          {cam.ok && (
+            <button
+              className="round-btn"
+              title="Open camera — Nomin will see this"
+              type="button"
+              onClick={() => {
+                setCameraError(null);
+                setCameraOpen((open) => !open);
+              }}
+            >
+              <CameraIcon />
+            </button>
+          )}
+
           <div className="mode-picker" ref={menuRef}>
             <button className="mode-btn" onClick={() => setOpen(!open)} type="button">
               <span className="mode-icon">{MODES[mode].icon}</span>
@@ -254,8 +379,8 @@ export function Composer({
             <button
               className="send-btn"
               onClick={submit}
-              disabled={!draft.trim()}
-              title="Send"
+              disabled={!draft.trim() && !attachments.length}
+              title={attachments.length ? `Send with ${attachments.length} attachment${attachments.length === 1 ? "" : "s"}` : "Send"}
               type="button"
             >
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

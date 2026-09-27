@@ -40,10 +40,6 @@ export function Canvas({
   const [nonce, setNonce] = useState(0);
   const [selected, setSelected] = useState(0);
 
-  // A project is whatever is in the workspace; the chat is the fallback.
-  const projectFiles: Artifact[] = fromWorkspaceFiles(workspace, state);
-  const isProject = projectFiles.some((file) => file.name.endsWith("package.json"));
-  const project = useProject(projectFiles, isProject, nonce);
   const frame = VIEWPORTS[viewport];
 
   // The workspace is the truth when the agent used tools; the chat is only the
@@ -52,17 +48,56 @@ export function Canvas({
   const fromWorkspace = Boolean(build);
   const document = build ? assemble(build, workspace.files) : state.document;
 
+  /**
+   * One build at a time.
+   *
+   * A session holds every build it has ever made, and showing all of their
+   * files at once turned the ice cream shop's code pane into a list that still
+   * had the coffee shop in it. Selecting a build scopes both panes to that
+   * build: its entry, the files it references, and the project manifests that
+   * govern it — nothing from its neighbours.
+   */
+  const scoped = useMemo(() => {
+    if (!build) return null;
+    const own = new Set(build.files);
+    for (const file of workspace.files) {
+      if (/(^|\/)(package\.json|package-lock\.json|tsconfig\.json|vite\.config\.[tj]s)$/i.test(file.path)) {
+        own.add(file.path);
+      }
+    }
+    return workspace.files.filter((file) => own.has(file.path));
+  }, [build, workspace.files]);
+
+  // A project is whatever the selected build brings with it; the chat is the
+  // fallback when no build exists at all.
+  const projectFiles: Artifact[] = useMemo(
+    () =>
+      scoped?.length
+        ? scoped.map((file) => ({
+            name: file.path,
+            lang: file.path.split(".").pop() ?? "text",
+            code: file.content,
+            turn: 0,
+          }))
+        : state.artifacts,
+    [scoped, state.artifacts],
+  );
+  const isProject = projectFiles.some((file) => file.name.endsWith("package.json"));
+  const project = useProject(projectFiles, isProject, nonce);
+
   const codeFiles: Array<{ name: string; code: string }> = fromWorkspace
-    ? workspace.files.map((file) => ({ name: file.path, code: file.content }))
+    ? (scoped ?? []).map((file) => ({ name: file.path, code: file.content }))
     : state.artifacts.map((item: Artifact) => ({ name: item.name, code: item.code }));
   const artifact = codeFiles[Math.min(selected, codeFiles.length - 1)];
   // A runnable project takes precedence: a page assembled from its files is
   // not the same thing as the dev server that project is meant to run under.
   const previewable = (fromWorkspace || state.kind === "html") && !isProject;
 
-  // A fresh build should be visible without asking for it.
+  // A fresh build should be visible without asking for it, and the code
+  // pane must not keep pointing at an index from the build before it.
   useEffect(() => {
     if (previewable || isProject) setTab("preview");
+    setSelected(0);
   }, [previewable, isProject, state.artifacts.length, activeBuild]);
 
   return (
@@ -148,19 +183,6 @@ export function Canvas({
       </div>
     </section>
   );
-}
-
-/** The files the container should run: the workspace, else the chat. */
-function fromWorkspaceFiles(workspace: WorkspaceSnapshot, state: CanvasState): Artifact[] {
-  if (workspace.files.length) {
-    return workspace.files.map((file) => ({
-      name: file.path,
-      lang: file.path.split(".").pop() ?? "text",
-      code: file.content,
-      turn: 0,
-    }));
-  }
-  return state.artifacts;
 }
 
 /* ---------------- container ---------------- */

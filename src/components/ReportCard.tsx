@@ -1,5 +1,5 @@
-import { useState } from "react";
-import type { MonitorState } from "../lib/useMonitor.js";
+import { useEffect, useState } from "react";
+import type { MonitorState, ReviewStep } from "../lib/useMonitor.js";
 import { Markdown } from "./Markdown.js";
 
 /**
@@ -22,19 +22,23 @@ function fixBrief(monitor: MonitorState): string {
 }
 
 const LABEL: Record<string, string> = {
-  verified: "Verified",
-  unverified: "Unverified",
-  concerns: "Concerns",
-  failed: "Failed",
+  verified: "Approved",
+  unverified: "Not approved yet",
+  concerns: "Sent back",
+  failed: "Rejected",
 };
 
 /**
- * The monitor's review, delivered in the conversation rather than filed away
- * in a panel — it is a second voice in the thread, so it reads as one: a
- * distinct speaker, clearly separated from Trion's own answer.
+ * The manager, speaking in the thread.
  *
- * It only ever states what was actually checked. "Unverified" is a real
- * outcome here, not a softer way of saying "fine".
+ * While it is working it shows the stages it is actually going through — read
+ * the files, render the result, run it, judge it — each one appearing as it
+ * starts and settling with what it found. The old card showed a single frozen
+ * line for the whole pass, which looked like a decoration rather than a
+ * review, and gave no sign whether anything was really happening.
+ *
+ * It only ever states what was actually checked. "Not approved yet" is a real
+ * outcome here, not a softer way of saying fine.
  */
 export function ReportCard({
   monitor,
@@ -47,20 +51,33 @@ export function ReportCard({
   fixing?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const working = monitor.status === "capturing" || monitor.status === "reviewing";
 
-  if (monitor.status === "capturing" || monitor.status === "reviewing") {
-    return (
-      <aside className="report-card pending">
-        <span className="report-spark" />
-        {monitor.status === "capturing" ? "Rendering the result to review" : "Manager reviewing the work"}…
-      </aside>
-    );
+  if (working) {
+    return <LiveReview monitor={monitor} />;
   }
 
   const verdict = monitor.verdict;
+  if (monitor.status === "failed") {
+    return (
+      <aside className="report-card unverified">
+        <header className="report-card-head">
+          <span className="report-who">Manager</span>
+          <span className="verdict unverified">Could not review</span>
+        </header>
+        <p className="report-card-summary">
+          {monitor.error ?? "The review did not complete, so this work is unapproved."}
+        </p>
+      </aside>
+    );
+  }
   if (!verdict || monitor.status === "idle") return null;
 
-  const hasDetail = Boolean(verdict.report) || verdict.issues.length > 0 || verdict.evidence.length > 0;
+  const hasDetail =
+    Boolean(verdict.report) ||
+    verdict.issues.length > 0 ||
+    verdict.evidence.length > 0 ||
+    monitor.steps.length > 0;
 
   return (
     <aside className={`report-card ${verdict.status}`}>
@@ -77,6 +94,11 @@ export function ReportCard({
       </header>
 
       <p className="report-card-summary">{verdict.summary}</p>
+
+      {/* Why the manager did not get to weigh in. Without this, a deployment
+          whose manager silently never runs looks exactly like one whose
+          manager ran and had no objection. */}
+      {!verdict.usedModel && verdict.note && <p className="report-note">{verdict.note}</p>}
 
       {onFix && (monitor.runtimeErrors?.length || verdict.status === "concerns" || verdict.status === "failed") ? (
         <div className="report-actions">
@@ -98,12 +120,13 @@ export function ReportCard({
 
       {hasDetail && (
         <button className="report-toggle" onClick={() => setOpen(!open)}>
-          {open ? "Hide detail" : "Show detail"}
+          {open ? "Hide what was checked" : "Show what was checked"}
         </button>
       )}
 
       {open && (
         <div className="report-card-detail">
+          {monitor.steps.length > 0 && <StepList steps={monitor.steps} />}
           {verdict.issues.length > 0 && (
             <ul className="report-issues">
               {verdict.issues.map((issue, i) => (
@@ -118,5 +141,47 @@ export function ReportCard({
         </div>
       )}
     </aside>
+  );
+}
+
+/** The review while it is running: the stages, as they happen. */
+function LiveReview({ monitor }: { monitor: MonitorState }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 500);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const seconds = monitor.startedAt ? Math.max(0, Math.round((now - monitor.startedAt) / 1000)) : 0;
+
+  return (
+    <aside className="report-card reviewing">
+      <header className="report-card-head">
+        <span className="report-spark" />
+        <span className="report-who">Manager</span>
+        <span className="report-live">reviewing the work</span>
+        <span className="report-source">{seconds}s</span>
+      </header>
+      <StepList steps={monitor.steps} />
+      <p className="report-gate">Nomin will not call this done until the manager approves it.</p>
+    </aside>
+  );
+}
+
+function StepList({ steps }: { steps: ReviewStep[] }) {
+  if (!steps.length) return null;
+  return (
+    <ol className="review-steps">
+      {steps.map((step) => (
+        <li key={step.id} className={`review-step ${step.state}`}>
+          <span className="review-pip" />
+          <span className="review-label">{step.label}</span>
+          {step.detail && <span className="review-detail">{step.detail}</span>}
+          {step.endedAt && step.endedAt - step.startedAt > 900 && (
+            <span className="review-took">{Math.round((step.endedAt - step.startedAt) / 100) / 10}s</span>
+          )}
+        </li>
+      ))}
+    </ol>
   );
 }

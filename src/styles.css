@@ -7,33 +7,38 @@
  * The aurora (purple → cyan) is reserved for work that is genuinely live.
  */
 :root {
-  --purple: #5a21d4;
-  --purple-lift: #7040e8;
+  /* Brand purple taken from the Nomin logo tile. Everything tinted in this
+     interface is a step on this one scale — the theme is the mark's colour. */
+  --purple: #7132f5;
+  --purple-lift: #9a6dff;
   --purple-deep: #4a14b5;
-  --purple-subtle: rgba(90, 33, 212, 0.10);
-  --teal: #1a9e8f;
+  --purple-subtle: rgba(113, 50, 245, 0.10);
+  --purple-wash: rgba(113, 50, 245, 0.05);
+  /* The live accent. It used to be cyan, which read as a second brand; it is
+     now the bright end of the same purple so live work looks like Nomin. */
+  --teal: #9a6dff;
   --green: #117a4d;
   --amber: #8a5a0e;
   --red: #b52e2e;
 
-  --canvas: #f5f4fa;
-  --panel: #eceaf4;
+  --canvas: #f7f5fd;
+  --panel: #f1edfb;
   --surface: #ffffff;
-  --surface-hi: rgba(90, 33, 212, 0.08);
-  --hairline: #d0cfde;
-  --hairline-soft: #dddce8;
-  --ink: #0a0b0f;
-  --body: #1e1f2b;
-  --muted: #44465a;
-  --muted-soft: #5e6078;
+  --surface-hi: rgba(113, 50, 245, 0.08);
+  --hairline: #ddd6f0;
+  --hairline-soft: #e8e2f7;
+  --ink: #16102a;
+  --body: #262039;
+  --muted: #4b4463;
+  --muted-soft: #6f6890;
 
   --ui: "Kraken-Product", "IBM Plex Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --display: "Kraken-Brand", "IBM Plex Sans", Helvetica, Arial, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --aurora: linear-gradient(120deg, #5a21d4, #7040e8 36%, #4a14b5 62%, #1a9e8f);
-  --shadow: 0 4px 24px rgba(16, 17, 20, 0.10);
-  --shadow-lift: 0 10px 40px rgba(90, 33, 212, 0.14);
+  --aurora: linear-gradient(120deg, #7132f5, #9a6dff 34%, #4a14b5 62%, #b79cff);
+  --shadow: 0 4px 24px rgba(41, 20, 88, 0.10);
+  --shadow-lift: 0 10px 40px rgba(113, 50, 245, 0.18);
   --rail-w: 264px;
   --canvas-w: 46%;
   --bar-h: 60px;
@@ -41,19 +46,22 @@
 }
 
 :root[data-theme="dark"] {
-  --canvas: #0c0b12;
-  --panel: #111019;
-  --surface: #17161f;
-  --surface-hi: rgba(133, 91, 251, 0.12);
-  --hairline: #262432;
-  --hairline-soft: #1e1c28;
-  --ink: #f4f3f8;
-  --body: #d7d6e2;
-  --muted: #9a9cb0;
-  --muted-soft: #6a6c82;
+  --canvas: #0b0716;
+  --panel: #120c22;
+  --surface: #191130;
+  --surface-hi: rgba(154, 109, 255, 0.14);
+  --hairline: #2c2247;
+  --hairline-soft: #221a3a;
+  --ink: #f4f1fc;
+  --body: #d9d3ee;
+  --muted: #a49cc4;
+  --muted-soft: #766e96;
+  --purple: #9a6dff;
+  --purple-subtle: rgba(154, 109, 255, 0.14);
+  --purple-wash: rgba(154, 109, 255, 0.07);
   --amber: #d99b2e;
-  --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-  --shadow-lift: 0 10px 40px rgba(0, 0, 0, 0.55);
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lift: 0 10px 40px rgba(0, 0, 0, 0.6);
 }
 
 * { box-sizing: border-box; }
@@ -92,8 +100,8 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 }
 :root[data-theme="dark"] .model-chip { color: var(--purple-lift); }
 .model-pip { width: 7px; height: 7px; border-radius: 50%; background: var(--muted-soft); }
-.model-pip.live { background: var(--teal); box-shadow: 0 0 0 0 rgba(46,211,198,0.5); animation: ping 1.8s ease-out infinite; }
-@keyframes ping { to { box-shadow: 0 0 0 7px rgba(46,211,198,0); } }
+.model-pip.live { background: var(--teal); box-shadow: 0 0 0 0 rgba(154,109,255,0.5); animation: ping 1.8s ease-out infinite; }
+@keyframes ping { to { box-shadow: 0 0 0 7px rgba(154,109,255,0); } }
 .ghost-btn {
   padding: 7px 12px; border-radius: 12px;
   border: 1px solid var(--hairline); color: var(--muted); font-size: 13px; font-weight: 500;
@@ -141,7 +149,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 }
 :root[data-theme="dark"] .new-task { color: var(--ink); }
 .new-task span { font-size: 18px; line-height: 1; color: var(--purple-lift); }
-.new-task:hover { background: rgba(133,91,251,0.2); }
+.new-task:hover { background: rgba(154,109,255,0.2); }
 .rail-section { display: flex; flex-direction: column; gap: 10px; }
 .rail-caption {
   font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase;
@@ -300,7 +308,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 .send-btn, .stop-btn {
   flex: none; width: 36px; height: 36px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center; color: #fff;
-  background: linear-gradient(140deg, #855bfb, #5b1ecf 60%, #2ed3c6);
+  background: linear-gradient(140deg, #9a6dff, #5b1ecf 60%, #b79cff);
   box-shadow: 0 4px 14px rgba(91,30,207,0.3);
 }
 .send-btn:disabled { background: var(--surface-hi); color: var(--muted-soft); box-shadow: none; cursor: not-allowed; }
@@ -767,7 +775,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 /* ---------- command palette ---------- */
 .palette-backdrop {
   position: fixed; inset: 0; z-index: 100;
-  background: rgba(8, 7, 13, 0.45);
+  background: rgba(11, 7, 22, 0.5);
   backdrop-filter: blur(2px);
   display: flex; align-items: flex-start; justify-content: center;
   padding: 14vh 16px 16px;
@@ -919,9 +927,9 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
   max-width: 78%;
   margin: 0;
   padding: 7px 12px 7px 10px;
-  border: 1px solid color-mix(in oklab, var(--aurora-2, #38e8c8) 22%, transparent);
+  border: 1px solid color-mix(in oklab, var(--aurora-2, #9a6dff) 22%, transparent);
   border-radius: 999px;
-  background: color-mix(in oklab, var(--aurora-2, #38e8c8) 7%, transparent);
+  background: color-mix(in oklab, var(--aurora-2, #9a6dff) 7%, transparent);
   color: var(--muted, rgba(255, 255, 255, 0.62));
   font-size: 12.5px;
   line-height: 1.45;
@@ -930,7 +938,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 .internal-note svg {
   flex: none;
   margin-top: 1px;
-  color: color-mix(in oklab, var(--aurora-2, #38e8c8) 80%, var(--fg, #fff));
+  color: color-mix(in oklab, var(--aurora-2, #9a6dff) 80%, var(--fg, #fff));
 }
 
 /* The manager confirming work it sent back has now passed. */
@@ -943,3 +951,188 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 .turn.internal.verified .internal-note svg {
   color: color-mix(in oklab, var(--ok, #3ddc97) 85%, var(--fg, #fff));
 }
+
+/* ---------- the mark ----------
+ * The supplied logo, on its own: no tile, no plate, no placeholder. The glyph
+ * ships white, which vanishes on a light page, so the light theme is served
+ * the same file inked in the brand purple. Identical alpha, identical shape —
+ * only which one is displayed changes with the theme.
+ */
+.mark {
+  flex: none; position: relative; display: inline-block;
+  transition: filter 260ms ease, transform 260ms ease;
+}
+.mark img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; user-select: none;
+}
+.mark .mark-dark { display: none; }
+:root[data-theme="dark"] .mark .mark-light { display: none; }
+:root[data-theme="dark"] .mark .mark-dark { display: block; }
+/* Live: the mark glows rather than gaining a box. */
+.mark.busy { animation: mark-live 2.2s ease-in-out infinite; }
+@keyframes mark-live {
+  0%, 100% { filter: drop-shadow(0 0 0 rgba(154, 109, 255, 0)); }
+  50% { filter: drop-shadow(0 0 9px rgba(154, 109, 255, 0.85)); }
+}
+
+.welcome-mark { position: relative; display: grid; place-items: center; }
+.welcome-mark .orb { grid-area: 1 / 1; }
+.welcome-mark .mark {
+  grid-area: 1 / 1; z-index: 1;
+  filter: drop-shadow(0 4px 18px rgba(113, 50, 245, 0.35));
+}
+
+/* ---------- attachments: the thumbnail, and the camera ---------- */
+.attachment-thumb {
+  flex: none; width: 26px; height: 26px; border-radius: 7px;
+  object-fit: cover; background: var(--surface-hi);
+  margin: -2px 0 -2px -4px;
+}
+.camera-box {
+  margin: 0 0 10px; padding: 10px; border-radius: 14px;
+  border: 1px solid var(--hairline); background: var(--panel);
+}
+.camera-box video {
+  display: block; width: 100%; max-height: 260px; border-radius: 10px;
+  background: #000; object-fit: cover;
+}
+.camera-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.camera-actions .ghost {
+  padding: 7px 13px; border-radius: 10px; border: 1px solid var(--hairline);
+  font-size: 13px; color: var(--muted);
+}
+.camera-actions .ghost:hover { color: var(--ink); background: var(--surface-hi); }
+.camera-actions .primary {
+  padding: 7px 14px; border-radius: 10px; font-size: 13px; font-weight: 600;
+  background: var(--purple); color: #fff;
+}
+.camera-actions .primary:disabled { opacity: 0.6; cursor: progress; }
+
+/* ---------- the turn, written out as steps ----------
+ * The same events as the tree, in a form you can read back after the fact.
+ * Evidence stays folded away until a row is opened.
+ */
+.thinking-body { margin-left: 16px; padding-top: 10px; }
+.thinking-views {
+  display: inline-flex; gap: 2px; padding: 2px; margin-bottom: 10px;
+  border-radius: 9999px; background: var(--surface-hi);
+}
+.thinking-views button {
+  padding: 4px 12px; border-radius: 9999px;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+}
+.thinking-views button.on { background: var(--surface); color: var(--purple); box-shadow: var(--shadow); }
+.thinking-steps { position: relative; }
+
+.steps { list-style: none; margin: 0; padding: 0 0 0 2px; }
+.step { position: relative; display: flex; gap: 10px; padding: 3px 0 3px 12px; }
+/* the spine */
+.step::before {
+  content: ""; position: absolute; left: 3.5px; top: 0; bottom: 0; width: 1.25px;
+  background: var(--hairline);
+}
+.step:first-child::before { top: 11px; }
+.step:last-child::before { bottom: auto; height: 11px; }
+.step-pip {
+  position: absolute; left: 0; top: 8px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--surface); border: 1.4px solid var(--muted-soft);
+}
+.step.done .step-pip { background: var(--purple); border-color: var(--purple); }
+.step.failed .step-pip { background: var(--red); border-color: var(--red); }
+.step.running .step-pip {
+  border-color: var(--purple); background: var(--purple);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.step-body { min-width: 0; flex: 1; }
+.step-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.step-label { font-size: 13.5px; color: var(--body); }
+.step-label.opens {
+  display: inline-flex; align-items: center; gap: 4px; padding: 0;
+  font-size: 13.5px; color: var(--body);
+}
+.step-label.opens:hover { color: var(--purple); }
+.step.failed .step-label { color: var(--red); }
+.step-detail, .step-took {
+  font-family: var(--mono); font-size: 11px; color: var(--muted-soft);
+}
+.step-evidence {
+  margin: 6px 0 8px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--hairline-soft); background: var(--panel);
+}
+.step-evidence-title {
+  margin: 0 0 6px; font-size: 11px; font-weight: 700;
+  letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted-soft);
+}
+.step-evidence pre {
+  margin: 0; max-height: 280px; overflow: auto;
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.6;
+  color: var(--muted); white-space: pre-wrap; word-break: break-word;
+}
+.step-evidence.thinking pre { font-family: var(--ui); font-size: 13px; color: var(--muted); }
+.step-evidence.code pre, .step-evidence.output pre { color: var(--body); }
+
+/* ---------- the manager, working ---------- */
+.report-card.reviewing { border-left-color: var(--purple); }
+.report-live {
+  font-family: var(--mono); font-size: 12px; color: var(--purple);
+}
+.report-gate {
+  margin: 10px 0 0; padding-top: 10px; border-top: 1px solid var(--hairline);
+  font-size: 12.5px; color: var(--muted-soft);
+}
+.report-note {
+  margin: 8px 0 0; font-family: var(--mono); font-size: 11.5px; color: var(--muted-soft);
+}
+.review-steps { list-style: none; margin: 8px 0 0; padding: 0; }
+.review-step {
+  display: flex; align-items: baseline; gap: 9px; padding: 3px 0;
+  font-size: 13px; color: var(--muted);
+}
+.review-pip {
+  flex: none; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--muted-soft); align-self: center;
+}
+.review-step.running .review-pip { background: var(--purple); animation: pulse 1.4s ease-in-out infinite; }
+.review-step.done .review-pip { background: var(--purple); }
+.review-step.failed .review-pip { background: var(--red); }
+.review-step.skipped .review-pip { background: transparent; border: 1.3px solid var(--muted-soft); }
+.review-step.done .review-label, .review-step.running .review-label { color: var(--body); }
+.review-step.failed .review-label { color: var(--red); }
+.review-detail, .review-took {
+  font-family: var(--mono); font-size: 11px; color: var(--muted-soft);
+}
+
+/* ---------- what this session has built ----------
+ * One card per build. A new request writes a new entry point, so it arrives as
+ * its own card instead of replacing the last one.
+ */
+.build-cards { margin-top: 16px; }
+.build-cards-title {
+  margin: 0 0 8px; font-size: 11px; font-weight: 700;
+  letter-spacing: 0.8px; text-transform: uppercase; color: var(--muted-soft);
+}
+.build-cards ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.build-card {
+  display: flex; align-items: stretch;
+  border: 1px solid var(--hairline); border-radius: 12px;
+  background: var(--surface); overflow: hidden;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.build-card:hover { border-color: var(--purple-lift); box-shadow: var(--shadow); }
+.build-card.on { border-color: var(--purple); background: var(--purple-wash); }
+.build-card-open {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px;
+  padding: 11px 14px; text-align: left;
+}
+.build-card-name {
+  font-size: 14px; font-weight: 600; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.build-card.on .build-card-name { color: var(--purple); }
+.build-card-meta { font-family: var(--mono); font-size: 11px; color: var(--muted-soft); }
+.build-card-get {
+  flex: none; display: grid; place-items: center; width: 46px;
+  border-left: 1px solid var(--hairline); color: var(--muted-soft);
+}
+.build-card-get:hover { background: var(--surface-hi); color: var(--purple); }
