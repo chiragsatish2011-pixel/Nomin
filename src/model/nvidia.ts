@@ -130,6 +130,7 @@ export class NvidiaProvider implements Provider {
         Authorization: `Bearer ${this.apiKey}`,
         "Content-Type": "application/json",
         Accept: request.stream === false ? "application/json" : "text/event-stream",
+        "User-Agent": "Nomin-AI-Agent/1.0 (Vercel Deployment)",
       },
       body: JSON.stringify(body),
       signal: request.signal ?? AbortSignal.timeout(this.model.timeoutMs),
