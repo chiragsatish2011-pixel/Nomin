@@ -103,12 +103,12 @@ export function ParticleOrb({
     >
       <defs>
         <linearGradient id={`${uid}-grad`} x1="-50" y1="-50" x2="50" y2="50" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#c0a6ff" />
-          <stop offset="45%" stopColor="#7132f5" />
-          <stop offset="100%" stopColor="#4a14b5" />
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="60%" stopColor="#ffffff" />
+          <stop offset="100%" stopColor="#7132f5" />
         </linearGradient>
         <radialGradient id={`${uid}-halo`}>
-          <stop offset="40%" stopColor="rgba(113,50,245,0.28)" />
+          <stop offset="40%" stopColor="rgba(113,50,245,0.25)" />
           <stop offset="100%" stopColor="rgba(113,50,245,0)" />
         </radialGradient>
       </defs>

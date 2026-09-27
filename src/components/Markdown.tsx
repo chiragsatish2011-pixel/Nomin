@@ -120,7 +120,7 @@ function renderBlocks(text: string, plain = false): ReactNode[] {
  */
 function CodeTag({ info, code, streaming }: { info: string; code: string; streaming?: boolean }) {
   // Nomin's own protocol blocks are not deliverables and never show as files.
-  if (info.trim().startsWith("nomin-")) return null;
+  if (info.trim().includes("nomin-")) return null;
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [langRaw, ...rest] = info.trim().split(/\s+/);

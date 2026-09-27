@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { AgentEvent } from "@nomin/work-tree";
-
+import { ParticleOrb } from "./ParticleOrb.js";
 import { currentPhase } from "./Pipeline.js";
 import { ThinkingSteps } from "./ThinkingSteps.js";
 
@@ -63,7 +63,7 @@ export function ThinkingBlock({
         type="button"
         aria-expanded={open}
       >
-        <img src="/logo-mark.png" alt="Thinking" style={{ width: running ? 40 : 32, height: running ? 40 : 32, objectFit: 'contain', animation: running ? 'step-live-core 1.5s cubic-bezier(0.16, 1, 0.3, 1) infinite' : 'none', borderRadius: '50%' }} />
+        <ParticleOrb size={running ? 44 : 34} count={running ? 520 : 300} active={running} />
         <span className="thinking-copy">
           <span className="thinking-label">{running ? status : `Thought for ${seconds}s`}</span>
           <span className="thinking-meta">

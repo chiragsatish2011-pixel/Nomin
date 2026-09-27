@@ -31,6 +31,7 @@ export interface Plan {
 export type PlanStatus = "none" | "proposed" | "approved" | "changes-requested";
 
 const BLOCK = /```nomin-plan\s*\n([\s\S]*?)```/;
+const FALLBACK_BLOCK = /(?:```nomin-plan\s*\n|\bnomin-plan\s*\n)?\s*(\{[\s\S]*?"understanding"[\s\S]*?"objective"[\s\S]*?\})/;
 
 /** True while a plan block is still streaming in. */
 export const planIncoming = (answer: string) =>
@@ -38,13 +39,24 @@ export const planIncoming = (answer: string) =>
 
 /** Lift a plan out of an answer. Returns the prose without it, and the plan. */
 export function parsePlan(answer: string): { text: string; plan: Plan | null } {
-  const match = BLOCK.exec(answer);
-  if (!match?.[1]) return { text: answer, plan: null };
+  let match = BLOCK.exec(answer);
+  let jsonStr = match?.[1];
+  let text = answer;
 
-  const text = answer.replace(BLOCK, "").trimEnd();
-  // Tolerant on purpose: a plan is lost otherwise for a single stray brace,
-  // and what the user then sees is raw JSON where the plan should have been.
-  const raw = parseLooseJson(match[1]);
+  if (match) {
+    text = answer.replace(BLOCK, "").trimEnd();
+  } else {
+    // If the model forgot backticks, find the raw JSON block directly.
+    const fallbackMatch = FALLBACK_BLOCK.exec(answer);
+    if (fallbackMatch) {
+      jsonStr = fallbackMatch[1];
+      text = answer.replace(fallbackMatch[0], "").trimEnd();
+    }
+  }
+
+  if (!jsonStr) return { text, plan: null };
+
+  const raw = parseLooseJson(jsonStr);
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { text, plan: null };
   return { text, plan: normalise(raw as Record<string, unknown>) };
 }
