@@ -733,11 +733,16 @@ export default function App() {
 function Welcome({ running }: { running: boolean }) {
   return (
     <div className="welcome">
-      {/* The mark sits behind the heading as a watermark rather than beside it:
-          large enough to be the page's identity, faint enough that the question
-          is still the first thing read. It is the same file, only scaled and
-          faded — nothing about the artwork changes. */}
+      {/* Two presentations of the same mark, and the width decides.
+
+          With room, it sits behind the heading as a watermark: large enough to
+          be the page's identity, faint enough that the question is still the
+          first thing read. In a narrow column there is no room to be faint —
+          a watermark at that size is either cropped or invisible — so it
+          becomes a solid mark standing above the heading instead. Same file
+          either way; only the scale and the opacity change. */}
       <MarkWatermark size={440} />
+      <Mark size={56} busy={running} className="welcome-badge" />
       <h1>What are we building?</h1>
       <p>
         Describe the outcome. Nomin Code asks what it needs, plans it for your approval, then builds,
@@ -1024,7 +1029,11 @@ function UserTurn({ message }: { message: ChatMessage }) {
             window.setTimeout(() => setCopied(false), 1400);
           }}
         >
-          {copied ? "Copied" : "Copy"}
+          {copied ? (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          ) : (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          )}
         </button>
       </div>
     </article>
@@ -1109,9 +1118,15 @@ function MessageActions({
           window.setTimeout(() => setCopied(false), 1400);
         }}
       >
-        {copied ? "Copied" : "Copy"}
+        {copied ? (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        ) : (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        )}
       </button>
-      <button onClick={retry}>Retry</button>
+      <button onClick={retry} title="Retry">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+      </button>
       {verdict && (
         <span className={`verdict ${verdict.status}`} title={verdict.issues.join(" · ")}>
           {/* The badge says what the manager decided, in the manager's own

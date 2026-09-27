@@ -1560,3 +1560,52 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 html, body { overflow-x: hidden; }
 .stage, .chat, .chat-inner, .turn { min-width: 0; max-width: 100%; }
 .turn-text pre, .md-code { max-width: 100%; overflow-x: auto; }
+
+/* ---------- a narrow column ----------
+ * The app is often not the whole window: a side panel in a browser, a split
+ * pane, a phone held in a case. Below about 560px there is no room for a
+ * watermark — at the size that makes it an identity it is either cropped or
+ * invisible — so the mark stops hiding behind the heading and stands above it,
+ * solid. The intro and the templates step aside; what is left is the mark, the
+ * question and somewhere to answer it.
+ */
+.welcome-badge { display: none; }
+
+@media (max-width: 560px) {
+  .mark-watermark { display: none; }
+
+  /* With the intro and the templates gone there is nothing left to scroll, so
+     the stage goes back to filling the pane: the mark and the question take
+     the space above, and the composer sits on the bottom edge where a composer
+     belongs rather than floating with dead space beneath it. */
+  .stage { overflow: hidden; }
+  .welcome {
+    flex: 1; min-height: 0; overflow: visible;
+    justify-content: center;
+    gap: 16px;
+    padding: 18px 18px 6px;
+  }
+  .welcome-badge {
+    display: inline-flex;
+    margin: 0 auto;
+    filter: drop-shadow(0 4px 16px rgba(113, 50, 245, 0.3));
+  }
+  .welcome h1 {
+    margin: 0;
+    font-size: clamp(22px, 7.2vw, 30px);
+    letter-spacing: -0.7px;
+  }
+  /* The intro is a paragraph of reassurance; at this width it is four lines
+     between the reader and the box they came to type in. */
+  .welcome p { display: none; }
+  .templates { display: none; }
+
+  .composer-dock.centred { justify-content: flex-end; padding-bottom: 12px; }
+  .disclaimer { font-size: 10.5px; line-height: 1.45; }
+}
+
+/* Narrower still: the composer is the page. */
+@media (max-width: 420px) {
+  .welcome-badge { width: 46px !important; height: 46px !important; }
+  .welcome h1 { font-size: clamp(20px, 6.6vw, 26px); }
+}

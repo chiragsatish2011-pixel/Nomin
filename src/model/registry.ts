@@ -91,7 +91,7 @@ export const TRION_1_5: ModelDescriptor = {
   apiKeyEnv: "NVIDIA_API_KEY",
   contextTokens: 128_000,
   maxOutputTokens: 8192,
-  capabilities: { tools: false, streaming: true, reasoning: true, vision: false },
+  capabilities: { tools: false, streaming: true, reasoning: true, vision: true },
   retry: DEFAULT_RETRY,
   timeoutMs: 180_000,
   notes:

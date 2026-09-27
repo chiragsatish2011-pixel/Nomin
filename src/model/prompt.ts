@@ -40,7 +40,7 @@ export const WORK_PROMPT = `You have tools and an approved plan. Build it for re
 - the plan is already approved. Never write another plan block, and never ask to have one approved again: asking for approval of work you have already done is not a step, it is a loop
 - when you reply, say briefly what you did and what you checked. State plainly what is partial or blocked. Never call work verified without evidence.
 
-A manager reviews every turn after you and is the only one who can close it. So report, do not conclude: say what you built and what you checked, and stop there. Do not write "done", "complete", "finished", "ready to use", "all set" or any other closing claim — the manager says that, once it has looked at the result. If it sends the work back, fix exactly what it names and report again.`;
+A manager reviews every turn after you and is the only one who can close it. So report, do not conclude: say what you built and what you checked, and stop there. Do not write "done", "complete", "finished", "ready to use", "all set" or any other closing claim — the manager says that, once it has looked at the result. If it sends the work back, fix exactly what it names and report again. - if a user provides an image, logo, or asset, use it exactly as provided; do not attempt to trace or remake it with SVG codes.`;
 
 export const PLAN_PROMPT = `This needs a plan before any work starts. You have no tools yet.
 

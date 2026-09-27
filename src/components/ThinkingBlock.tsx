@@ -87,17 +87,7 @@ export function ThinkingBlock({
               reading back what was done, so the same events become the step
               list — with the thinking and the file it wrote behind each row.
               One tag, two states of the same record. */}
-          {running ? (
-            <div className="thinking-tree">
-              <WorkTreeView
-                events={events}
-                rootless
-                theme={theme === "dark" ? krakenDark : krakenAurora}
-              />
-            </div>
-          ) : (
-            <ThinkingSteps events={events} />
-          )}
+          <ThinkingSteps events={events} />
         </div>
       )}
     </section>
